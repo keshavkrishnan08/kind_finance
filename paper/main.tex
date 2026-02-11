@@ -42,6 +42,12 @@ for Financial Market Dynamics}
 
 \date{\today}
 
+\pacs{89.65.Gh, 05.70.Ln, 02.50.Ga, 05.45.Tp}
+% 89.65.Gh -- Economics; econophysics, financial markets, business and management
+% 05.70.Ln -- Nonequilibrium and irreversible thermodynamics
+% 02.50.Ga -- Markov processes
+% 05.45.Tp -- Time series analysis
+
 % ============================================================================
 \begin{abstract}
 Financial markets operate far from thermodynamic equilibrium, exhibiting
@@ -99,7 +105,13 @@ provide a systematic framework for quantifying \emph{how far} the market
 deviates from equilibrium or for decomposing that deviation into
 dynamically interpretable modes.
 
-Non-equilibrium statistical mechanics offers precisely this
+Recent work has begun to bridge non-equilibrium physics and
+finance---Ducuara \emph{et al.}~\cite{ducuara2023maxwell} established a
+rigorous connection between Crooks' fluctuation relations and expected
+utility theory, and Rold{\'a}n and
+Parrondo~\cite{roldan2010estimating} developed methods for estimating
+dissipation from single trajectories. Non-equilibrium statistical
+mechanics offers precisely this
 framework~\cite{seifert2012stochastic,ciliberto2017experiments}. In
 stochastic thermodynamics, the departure from equilibrium is quantified by
 the \textit{entropy production rate}
@@ -662,10 +674,12 @@ extension of this work.
 \label{sec:data}
 
 We analyze daily log-returns of U.S.\ equity ETFs over the period
-January 2003 to December 2025. The \textit{univariate} analysis uses the
-S\&P 500 ETF (SPY). The \textit{multivariate} analysis includes 11 sector
-ETFs (XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY) spanning
-the Global Industry Classification Standard. The CBOE Volatility Index
+January 1993 to December 2025. The \textit{univariate} analysis uses the
+S\&P 500 ETF (SPY), which provides the longest available history
+(1993--present). The \textit{multivariate} analysis uses 11 cross-asset
+ETFs spanning equities (SPY, QQQ, IWM), international markets (EFA, EEM),
+fixed income (TLT, IEF, LQD, HYG), gold (GLD), and real estate (VNQ),
+all available from 2003 or earlier. The CBOE Volatility Index
 (VIX) serves as an external benchmark but is not used as a model input.
 
 Log-returns are computed as $r_t = \ln(P_t/P_{t-1})$ and standardized
@@ -704,12 +718,13 @@ dropout $p = 0.1$. All experiments are seeded for reproducibility
 
 Data are split chronologically to respect temporal ordering:
 \begin{itemize}
-  \item \textbf{Train}: 2004--2017 ($\sim$3500 days).
+  \item \textbf{Train}: 1994--2017 ($\sim$6000 days), encompassing the
+    dot-com bubble, its collapse, and the 2008 global financial crisis.
   \item \textbf{Validation}: 2018--2019 ($\sim$500 days).
-  \item \textbf{Test}: 2020--2023 ($\sim$1000 days).
+  \item \textbf{Test}: 2020--2025 ($\sim$1250 days), including the
+    COVID-19 crash (March 2020), the 2022 rate-hike bear market, and
+    the subsequent recovery.
 \end{itemize}
-The test period includes the COVID-19 crash (March 2020), providing a
-stringent out-of-sample evaluation of regime detection capability.
 
 \subsection{Baselines}
 \label{sec:baselines}
@@ -889,7 +904,7 @@ confidence interval confirms that the non-equilibrium signal is
 statistically robust and not an artifact of finite-sample noise.
 
 The spectral entropy decomposition $\dot{S}_k = \omega_k^2 A_k$
-(Eq.~\ref{eq:entropy_decomp}) reveals that a small number of modes
+(Eq.~\ref{eq:ep_total}) reveals that a small number of modes
 ($\lesssim 3$) account for $>80\%$ of the total entropy production,
 suggesting that market irreversibility is driven by a low-dimensional
 subset of dynamical processes operating at specific frequencies (Fig.~4).
@@ -1027,14 +1042,21 @@ Our framework extends the VAMPnet architecture~\cite{mardt2018vampnets} from
 reversible molecular dynamics to non-reversible financial dynamics. While
 previous applications of Koopman theory to
 finance~\cite{mann2016dynamic,kostic2022learning} used linear (DMD-based)
-methods that cannot capture the nonlinear structure of regime transitions,
+methods that cannot capture the nonlinear structure of regime transitions.
+Data-driven transfer operator methods~\cite{klus2018data} and sparse
+identification approaches~\cite{brunton2016discovering} offer alternatives
+but do not provide the thermodynamic observables central to our framework.
 KTND learns a nonlinear Koopman embedding that resolves complex eigenvalues
 and non-equilibrium mode structure.
 
 The irreversibility field $I(\mathbf{x})$ provides a spatial diagnostic
 absent from previous non-equilibrium analyses of financial
-data~\cite{jiang2019multifractal}, which typically report only global
-entropy production estimates without state-space resolution.
+data~\cite{jiang2019multifractal,zumbach2009time}, which typically report
+only global entropy production estimates or scalar irreversibility indices
+without state-space resolution. Zumbach~\cite{zumbach2009time} demonstrated
+that financial time series violate time-reversal invariance at multiple
+scales, but provided no spectral decomposition of the violation or
+pointwise localization---gaps that KTND directly addresses.
 
 \subsection{Limitations}
 
@@ -1117,6 +1139,16 @@ statistical and machine learning approaches.
   The author thanks the open-source communities behind PyTorch, NumPy,
   SciPy, and scikit-learn for making this work possible.
 \end{acknowledgments}
+
+\section*{Data availability}
+All market data used in this study are publicly available from Yahoo
+Finance (\texttt{yfinance} Python package). NBER recession dates are
+obtained from the National Bureau of Economic Research public database.
+
+\section*{Code availability}
+The complete implementation, including training code, analysis scripts,
+configuration files, and the full test suite (132 unit tests), is
+available at \url{https://github.com/keshavkrishnan08/kind_finance}.
 
 
 % ============================================================================
