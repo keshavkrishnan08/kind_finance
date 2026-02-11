@@ -1,0 +1,24 @@
+# =============================================================================
+# KTND-Finance: Multi-Asset Configuration
+# =============================================================================
+# Full 11-ETF cross-sectional analysis.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - default
+
+data:
+  tickers:
+    - SPY   # S&P 500
+    - QQQ   # Nasdaq 100
+    - IWM   # Russell 2000
+    - EFA   # MSCI EAFE (International Developed)
+    - EEM   # MSCI Emerging Markets
+    - TLT   # 20+ Year Treasury Bond
+    - IEF   # 7-10 Year Treasury Bond
+    - LQD   # Investment Grade Corporate Bond
+    - HYG   # High Yield Corporate Bond
+    - GLD   # Gold
+    - VNQ   # Real Estate (REITs)
+  input_dim: 11

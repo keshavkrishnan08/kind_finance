@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.pytest_cache/
+
+# Data (cached downloads)
+data/*.csv
+data/*.parquet
+data/*.pkl
+data/raw/*.csv
+
+# Results / outputs
+results/
+outputs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.log
+
+# Jupyter
+.ipynb_checkpoints/

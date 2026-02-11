@@ -1,0 +1,13 @@
+# =============================================================================
+# KTND-Finance: Univariate Configuration
+# =============================================================================
+# Single-asset analysis using SPY.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - default
+
+data:
+  tickers: ['SPY']
+  input_dim: 1

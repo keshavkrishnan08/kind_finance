@@ -1,0 +1,12 @@
+# =============================================================================
+# Ablation A3: Linear Features (No Hidden Layers)
+# =============================================================================
+# Tests the effect of using a linear feature map with no hidden layers.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+model:
+  hidden_dims: []

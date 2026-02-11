@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A5: Number of Koopman Modes Sweep
+# =============================================================================
+# Sweeps over different numbers of Koopman modes to assess sensitivity.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+sweep:
+  parameter: model.n_modes
+  values: [3, 5, 10, 20, 50]

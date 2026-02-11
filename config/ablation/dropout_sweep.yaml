@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A11: Dropout Rate Sweep
+# =============================================================================
+# Sweeps over different dropout rates for regularization sensitivity.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+sweep:
+  parameter: model.dropout
+  values: [0, 0.1, 0.2, 0.3, 0.5]

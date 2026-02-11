@@ -1,0 +1,16 @@
+# =============================================================================
+# Ablation A8: Network Architecture Sweep
+# =============================================================================
+# Sweeps over different hidden layer architectures for the feature network.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+sweep:
+  parameter: model.hidden_dims
+  values:
+    - [64, 64]
+    - [128, 128, 64]
+    - [256, 256, 128]

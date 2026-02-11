@@ -1,0 +1,12 @@
+# =============================================================================
+# Ablation A2: No Orthogonality Constraint
+# =============================================================================
+# Tests the effect of removing the orthogonality penalty from the loss function.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+losses:
+  beta_orthogonality: 0.0

@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A10: Embedding Dimension Sweep
+# =============================================================================
+# Sweeps over different time-delay embedding dimensions.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+sweep:
+  parameter: data.embedding_dim
+  values: [1, 3, 5, 7, 10]
