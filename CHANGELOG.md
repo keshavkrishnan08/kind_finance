@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## v1.3.0 — PRE Statistical Rigor Fixes (2026-02-10)
+
+### Critical Code Bug Fixes
+- **Spectral gap**: Use `KoopmanAnalyzer.compute_spectral_gap` (`|Re(ln λ₂)|/τ`) instead of discrete magnitude difference (`|λ₁| - |λ₂|`)
+- **Entropy amplitude**: `A_k = mean(u_k * v_k)` bilinear product of left/right eigenfunctions, not `mean(u_k²)`
+- **Fluctuation theorem ratio**: Use per-sample KDE entropy production (N values) instead of per-mode spectral values (K values)
+- **Ablation dates**: Import `DATE_RANGES` from `src.constants` instead of stale hardcoded 2004-2017/2020-2023
+
+### Granger Causality Test (run_robustness.py)
+- Add ADF stationarity pre-check; auto-difference non-stationary series
+- Bidirectional testing: spectral_gap → VIX **and** VIX → spectral_gap
+- Bonferroni correction across lags for multiple comparisons
+
+### NBER Comparison (regime.py)
+- Learn label-to-recession mapping on **training data only** (prevents data snooping)
+- Add naive frequency baseline for comparison
+- Report mapping provenance in results
+
+### Chapman-Kolmogorov Test (run_robustness.py)
+- Replace t-test-against-zero with block-bootstrap null distribution (200 replicates)
+- Bootstrap destroys Markov structure; p-value = P(boot_error ≤ observed)
+
+### Visualization Fix
+- Replace fake outer-product mode-correlation heatmap with real Pearson correlation of eigenfunction time series
+
+### Paper Fixes (main.tex, references.bib)
+- Fix broken `\ref{eq:entropy_decomp}` → `\ref{eq:ep_total}`
+- Correct data splits to match code (1994-2017 train, 2020-2025 test)
+- Fix ticker list to match `TICKERS_MULTIASSET` (SPY, QQQ, IWM, etc.)
+- Add PACS numbers: 89.65.Gh, 05.70.Ln, 02.50.Ga, 05.45.Tp
+- Add data availability and code availability statements
+- Add 6 key references: Zumbach 2009, Roldán & Parrondo 2010, Ducuara 2023, Klus 2018, Brunton 2016, Li 2019
+- Cite new references in appropriate sections
+
+### New Functions
+- `estimate_per_sample_entropy_production()` in `src/model/entropy.py`
+- `_kde_entropy_production(..., return_samples=True)` option
+- `_run_adf_test()`, `_granger_one_direction()` helpers in run_robustness.py
+
 ## v1.2.0 — First Complete Pipeline Run + Results (2026-02-10)
 
 ### Pipeline Results (Colab T4 GPU)
