@@ -287,10 +287,20 @@ decay rate is
   = \frac{\sqrt{V''(\mathbf{x}_{\min})\,|V''(\mathbf{x}_{\mathrm{bar}})|}}
     {2\pi}\, \exp\!\left(-\frac{\Delta V}{D}\right),
 \end{equation}
-and $\Delta = \gamma_{\mathrm{Kramers}}$ to leading order. In the financial
-context, the spectral gap quantifies how quickly market regimes (bull/bear,
-low/high volatility) can transition, with deeper ``potential barriers''
-between regimes implying longer persistence.
+and $\Delta = \gamma_{\mathrm{Kramers}}$ to leading order.
+
+For non-reversible dynamics, the bound~\eqref{eq:persistence} remains valid
+as a consequence of the spectral mapping theorem: the slowest-decaying mode
+sets a lower bound on mixing time regardless of
+reversibility~\cite{hwang2005accelerating}. However, the bound is typically
+\emph{not tight} in the non-reversible case. Non-conservative forces can
+accelerate mixing by introducing probability currents that shortcut between
+metastable basins~\cite{rey-bellet2006open}, so the actual regime persistence
+may be significantly shorter than $1/\Delta$. We therefore interpret
+$T_{\mathrm{persist}} \geq 1/\Delta$ as a conservative estimate. In the
+financial context, the spectral gap quantifies how quickly market regimes
+(bull/bear, low/high volatility) can transition, with deeper ``potential
+barriers'' between regimes implying longer persistence.
 
 \subsection{Entropy production from the Koopman spectrum}
 \label{sec:entropy}
@@ -330,6 +340,21 @@ decomposition in terms of probability currents in stochastic
 thermodynamics~\cite{gaspard2004time,maes2003time}. It enables
 identification of which dynamical timescales contribute most to the
 market's departure from equilibrium.
+
+We emphasize that Eq.~\eqref{eq:ep_mode} is an \emph{approximation}
+valid in the weakly dissipative regime where the non-conservative
+component of the dynamics is a small perturbation of the
+detailed-balance-satisfying part~\cite{gaspard2004time}. In this limit
+the leading-order correction to the equilibrium spectrum enters
+through the imaginary parts $\omega_k$, and the quadratic scaling
+$\dot{S}_k \propto \omega_k^2$ follows from the perturbative expansion
+of the Kullback-Leibler divergence. For strongly non-equilibrium
+systems where $\omega_k \sim \gamma_k$, higher-order terms in the
+expansion become relevant and Eq.~\eqref{eq:ep_mode} underestimates the
+true per-mode entropy production. We verify the self-consistency of
+the approximation empirically through the entropy production consistency
+loss (Sec.~\ref{sec:loss}), which penalizes deviations between
+the spectral sum and the non-parametric KDE estimate.
 
 \subsection{Irreversibility field}
 \label{sec:irreversibility}
@@ -606,6 +631,27 @@ with Scott's bandwidth rule, and compute
 By construction $\hat{\ep} \geq 0$ in expectation, with equality for
 time-reversible processes.
 
+A known limitation of the KDE approach is the curse of dimensionality:
+for the multivariate analysis with $d$ assets and embedding dimension $m$,
+the joint density is estimated in a $2dm$-dimensional space (forward and
+time-reversed concatenation), where Gaussian KDE bandwidth selection
+rules (Scott's rule, $h \propto N^{-1/(2dm+4)}$) yield poorly resolved
+density estimates for moderate $N$~\cite{kraskov2004estimating}. This
+can introduce positive bias in $\hat{\ep}$ because the forward and
+reversed densities are estimated from overlapping but non-identical
+support. We mitigate this bias in three ways: (i) computing
+$\hat{\ep}$ on the \emph{univariate} embedded series ($d=1$, $m=5$,
+yielding a 10-dimensional joint space) rather than the full
+multivariate input; (ii) providing block-bootstrap confidence
+intervals (block length 50 days, 200 replicates) that capture
+finite-sample variability; and (iii) cross-validating against the
+spectral decomposition $\sum_k \omega_k^2 A_k$ through the
+entropy consistency loss. For higher-dimensional applications,
+$k$-nearest-neighbor entropy estimators based on the
+Kozachenko-Leonenko framework~\cite{kozachenko1987sample,kraskov2004estimating}
+would provide dimension-robust alternatives and represent a natural
+extension of this work.
+
 
 % ============================================================================
 % IV. METHODS
@@ -787,6 +833,40 @@ oscillatory probability currents inconsistent with detailed balance
 processes (regime persistence), while the complex conjugate pairs encode
 cyclical dynamics on timescales ranging from weeks to months.
 
+The prevalence of complex modes (8 of 10) has a direct economic
+interpretation. In an equilibrium market where prices follow a
+time-reversible random walk, all Koopman eigenvalues would be real: the
+transition density from any state would equal the time-reversed density.
+Complex eigenvalues encode \emph{rotational probability currents}---the
+system preferentially traverses state-space cycles in one temporal
+direction. These cycles correspond to well-documented financial
+phenomena:
+
+\begin{itemize}
+  \item \textbf{Momentum--mean reversion cycles.} The fastest complex
+    modes (oscillation periods $\sim$10--20 trading days) capture the
+    short-horizon momentum effect~\cite{jegadeesh1993returns}: returns
+    exhibit positive autocorrelation at weekly scales that reverses at
+    monthly scales~\cite{lo1990contrarian}, creating a rotational flow
+    in the return-lagged-return phase plane.
+  \item \textbf{Volatility asymmetry (leverage effect).} The well-known
+    asymmetry between rapid volatility increases during drawdowns and
+    gradual decreases during rallies~\cite{bouchaud2002leverage} breaks
+    detailed balance because the up-volatility and down-volatility paths
+    are traversed at different rates, exactly the signature captured by
+    complex eigenvalues.
+  \item \textbf{Risk-on/risk-off cycling.} Intermediate-timescale modes
+    ($\sim$1--3 months) reflect the cyclical alternation between
+    risk-seeking and risk-averse market regimes driven by sentiment,
+    positioning, and information gradients~\cite{hong1999unified}.
+  \item \textbf{Stylized fact consistency.} The coexistence of slowly
+    decaying real modes (long-lived regime persistence) with faster
+    complex modes (cyclical currents) is consistent with the established
+    empirical properties of asset returns: volatility clustering (slow
+    modes) superimposed on mean-reverting oscillations (complex
+    modes)~\cite{cont2001empirical}.
+\end{itemize}
+
 \subsection{Regime detection}
 \label{sec:regime_results}
 
@@ -925,6 +1005,22 @@ dynamical timescales drive irreversibility, potentially identifying the
 signatures of informed trading, momentum strategies, or regulatory
 interventions.
 
+The dominance of complex modes (8 of 10) is noteworthy because it
+quantifies a long-suspected but rarely formalized property of financial
+markets: the arrow of time is not merely present but is
+\emph{multi-scale}, operating through several distinct oscillatory
+channels simultaneously. The entropy production decomposition
+$\dot{S}_k = \omega_k^2 A_k$ reveals that the fastest oscillatory
+modes contribute most to irreversibility (due to the $\omega_k^2$
+scaling), suggesting that short-horizon momentum effects and
+volatility asymmetry---rather than slow regime
+transitions---dominate the market's thermodynamic cost of
+non-equilibrium maintenance. This finding is consistent with
+microstructure theory, where the continuous flow of information
+and the asymmetry between informed and noise
+traders~\cite{bouchaud2003theory} sustains probability currents
+predominantly at short timescales.
+
 \subsection{Relation to prior work}
 
 Our framework extends the VAMPnet architecture~\cite{mardt2018vampnets} from
@@ -951,6 +1047,28 @@ Several limitations warrant discussion:
   \item \textbf{Lag time selection}: The choice of $\tau$ affects the
     timescales captured. Our ablation study explores sensitivity, but an
     adaptive $\tau$ remains an open problem.
+  \item \textbf{Entropy decomposition approximation}: The per-mode
+    entropy production $\dot{S}_k = \omega_k^2 A_k$ is derived under
+    a weakly dissipative assumption~\cite{gaspard2004time}. For strongly
+    non-equilibrium regimes (e.g., crisis periods where $\omega_k \sim
+    \gamma_k$), the decomposition may underestimate the true per-mode
+    contributions. The entropy consistency loss provides an empirical
+    check, but a fully non-perturbative spectral decomposition remains
+    an open theoretical problem.
+  \item \textbf{KDE entropy estimation}: Gaussian KDE-based entropy
+    production estimates suffer from the curse of dimensionality in
+    high-dimensional joint spaces~\cite{kraskov2004estimating}. While our
+    univariate analysis ($d=1$, 10D joint space) is tractable, the
+    multivariate case ($d=11$, 110D joint space) would require
+    $k$-nearest-neighbor estimators for reliable density
+    estimation~\cite{kozachenko1987sample}. The block-bootstrap confidence
+    intervals quantify finite-sample uncertainty but not systematic
+    dimensionality bias.
+  \item \textbf{Spectral gap bound}: The regime persistence bound
+    $T_{\mathrm{persist}} \geq 1/\Delta$ is conservative for
+    non-reversible dynamics, where non-conservative probability currents
+    can accelerate mixing beyond what the spectral gap
+    predicts~\cite{hwang2005accelerating}.
   \item \textbf{Finite-sample effects}: Covariance estimation from finite
     data introduces bias, particularly for high-dimensional multivariate
     analyses.
@@ -964,8 +1082,12 @@ Several limitations warrant discussion:
 Extensions include (i) time-dependent Koopman operators for non-stationary
 dynamics, (ii) incorporation of exogenous variables (monetary policy,
 sentiment) as control inputs, (iii) application to high-frequency data
-where non-equilibrium effects should be more pronounced, and (iv) extension
-to option-implied state spaces.
+where non-equilibrium effects should be more pronounced, (iv) extension
+to option-implied state spaces, and (v) replacing the KDE-based entropy
+production estimator with $k$-nearest-neighbor methods based on the
+Kozachenko-Leonenko framework~\cite{kozachenko1987sample,kraskov2004estimating},
+which provide dimension-robust density ratio estimation suitable for
+high-dimensional multivariate analyses.
 
 
 % ============================================================================
