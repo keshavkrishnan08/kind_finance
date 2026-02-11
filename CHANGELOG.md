@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## v1.2.0 — First Complete Pipeline Run + Results (2026-02-10)
+
+### Pipeline Results (Colab T4 GPU)
+All 8 pipeline stages passed successfully:
+- **Spectral gap**: 0.040 (slow regime mixing, consistent with persistent bull/bear regimes)
+- **Entropy production**: 51.2 [48.9, 52.3] 95% CI (statistically significant non-equilibrium)
+- **Mean irreversibility**: 7.90 (substantial time-asymmetry in market dynamics)
+- **Irreversibility method**: eigendecomposition (theory-correct, not SVD fallback)
+- **Detailed balance violation**: 0.73 (confirms broken equilibrium)
+- **Complex modes**: 8/10 (oscillatory dynamics dominate)
+- **Fluctuation theorem ratio**: 0.87 (approximate Gallavotti-Cohen compliance)
+
+### Stages Completed
+1. Unit tests (132 tests, all pass)
+2. Data download (SPY 8314 rows 1993-2025, 11 ETFs, VIX)
+3. Univariate training (SPY, 500 epochs, early stopping)
+4. Multiasset training (11 ETFs, 500 epochs)
+5. Baselines (HMM, DMD, PCA, VIX threshold vs NBER)
+6. Robustness tests (CK, bootstrap, permutation, Ljung-Box, Granger, KS)
+7. Rolling spectral analysis (spectral gap vs VIX time series)
+8. Figure generation (9 main + 8 supplemental)
+
+## v1.1.0 — PRE Weakness Fixes + Test Coverage (2026-02-09)
+
+### Irreversibility Field Fix
+- Added `compute_eigenfunctions_eig()` and `compute_irreversibility_field_eig()` using proper eigendecomposition (`torch.linalg.eig`) instead of SVD. SVD kept as fallback.
+- `run_main.py` tries eigendecomposition first, falls back to SVD if numerically unstable.
+
+### Entropy Production Error Bounds
+- Added `_kde_entropy_production()` helper extracting core KDE logic.
+- Added `estimate_empirical_entropy_production_with_ci()` with moving-block bootstrap (Kunsch 1989): 200 resamples, 95% CI, block_length=50.
+- Results JSON now includes `entropy_ci_lower`, `entropy_ci_upper`, `entropy_std_error`.
+
+### Data Pipeline Bug Fix
+- Fixed critical shared-cache bug: `prices.csv` `dropna()` truncated all data to 2007+ (HYG inception). Now uses `ffill()` on cache, `dropna()` per-subset only. SPY preserves full 1993-2025 history.
+
+### Tightened Test Tolerances
+- Synthetic fixtures: 10000 → 20000 steps, 150 → 300 epochs.
+- Kramers ratio: 0.01-100 → 0.1-10x.
+- CK error: < 2.0 → < 1.5.
+- MFPT ratio: 0.01-100 → 0.2-5x.
+- Reversible imaginary parts: < 1.5 → < 1.0.
+
+### New Tests (37 added, 95 → 132 total)
+- `test_preprocessing.py` (24 tests): log returns, standardization, time-lagged pairs, embedding, rolling windows, leakage validation.
+- `test_bootstrap_ci.py` (13 tests): KDE entropy helper, bootstrap CI output/ordering/reproducibility, data loader.
+- `test_synthetic.py` additions: `TestVAMPNonReversibleValidation` (3 tests), `TestIrreversibilityFieldEig` (2 tests).
+
+### Centralized Constants
+- `src/constants.py` — single source of truth for dates, tickers, crisis dates.
+- All 4 experiment runners import from `src.constants` (no local `DATE_RANGES`).
+
+### Master Orchestrator
+- `experiments/run_all.py` — sequences 7 pipeline stages via subprocess.
+- Flags: `--modes`, `--ablations`, `--skip-download`, `--n-seeds`, `--n-jobs`.
+- Produces `pipeline_report.json` with per-stage status/timing.
+
+### Colab Notebook
+- `KTND_Finance_Colab.ipynb` — 5-cell notebook: setup, full pipeline in one cell, view figures, download zip, optional ablations.
+
+### Infrastructure
+- `run.sh` — local shell script with `--fast`, `--ablations`, `--skip-download` flags.
+- `data/download.py` — centralized download with `download_prices()` and `download_vix()`.
+- Leakage validation: `validate_no_leakage()` checks chronological splits, stats train-only.
+- `requirements.txt`: removed fredapi, updated yfinance>=1.0.0.
+
 ## v1.0.0 — Initial Implementation (2026-02-08)
 
 Complete implementation of the KTND-Finance framework: Non-Equilibrium Koopman-Thermodynamic Neural Decomposition for Financial Market Dynamics.
