@@ -415,16 +415,68 @@ def ljung_box_test(
 # Test 5: Granger causality (spectral gap -> VIX)
 # =====================================================================
 
+def _run_adf_test(series: np.ndarray, name: str) -> Dict[str, Any]:
+    """Augmented Dickey-Fuller stationarity test on a single series."""
+    from statsmodels.tsa.stattools import adfuller
+    result = adfuller(series, autolag="AIC")
+    return {
+        "series": name,
+        "adf_statistic": float(result[0]),
+        "p_value": float(result[1]),
+        "n_lags_used": int(result[2]),
+        "stationary_5pct": float(result[1]) < 0.05,
+    }
+
+
+def _granger_one_direction(
+    y: np.ndarray, x: np.ndarray, max_lag: int, direction: str,
+) -> Dict[str, Any]:
+    """Run Granger test in one direction with Bonferroni correction."""
+    from statsmodels.tsa.stattools import grangercausalitytests
+
+    data = np.column_stack([y, x])
+    results_by_lag: List[Dict[str, Any]] = []
+
+    gc_results = grangercausalitytests(data, maxlag=max_lag, verbose=False)
+    for lag in range(1, max_lag + 1):
+        f_stat = gc_results[lag][0]["ssr_ftest"][0]
+        p_value = gc_results[lag][0]["ssr_ftest"][1]
+        results_by_lag.append({
+            "lag": lag,
+            "f_statistic": float(f_stat),
+            "p_value": float(p_value),
+        })
+
+    # Bonferroni correction across lags
+    min_p = min(r["p_value"] for r in results_by_lag) if results_by_lag else 1.0
+    bonferroni_p = min(min_p * max_lag, 1.0)
+    best_lag = min(results_by_lag, key=lambda r: r["p_value"])["lag"] if results_by_lag else None
+
+    for r in results_by_lag:
+        r["bonferroni_p"] = min(r["p_value"] * max_lag, 1.0)
+        r["significant_bonferroni"] = r["bonferroni_p"] < 0.05
+
+    return {
+        "direction": direction,
+        "results_by_lag": results_by_lag,
+        "min_p_value": min_p,
+        "bonferroni_min_p": bonferroni_p,
+        "best_lag": best_lag,
+        "significant_bonferroni": bonferroni_p < 0.05,
+    }
+
+
 def granger_causality_test(
     spectral_gap_ts: Optional[np.ndarray],
     vix_ts: Optional[np.ndarray],
     max_lag: int = 20,
 ) -> Dict[str, Any]:
-    """Test Granger causality from spectral gap time series to VIX.
+    """Bidirectional Granger causality test with ADF pre-check and Bonferroni.
 
-    Uses the statsmodels implementation of the Granger causality F-test.
+    Tests both directions (spectral_gap -> VIX and VIX -> spectral_gap)
+    with proper stationarity verification and multiple-comparison correction.
     """
-    logger.info("Running Granger causality test (spectral_gap -> VIX) ...")
+    logger.info("Running Granger causality test (bidirectional, with ADF check) ...")
 
     if spectral_gap_ts is None or vix_ts is None:
         logger.warning("Spectral gap or VIX data not available; skipping Granger test.")
@@ -435,51 +487,64 @@ def granger_causality_test(
         }
 
     try:
-        from statsmodels.tsa.stattools import grangercausalitytests
+        from statsmodels.tsa.stattools import grangercausalitytests, adfuller
     except ImportError:
         return {"test": "Granger_Causality", "skipped": True, "reason": "statsmodels not installed"}
 
-    # Align lengths
+    # Align lengths and remove NaN/Inf
     min_len = min(len(spectral_gap_ts), len(vix_ts))
-    data = np.column_stack([
-        vix_ts[:min_len],  # Y (response)
-        spectral_gap_ts[:min_len],  # X (potential cause)
-    ])
+    sg = spectral_gap_ts[:min_len].copy()
+    vix = vix_ts[:min_len].copy()
+    valid = np.isfinite(sg) & np.isfinite(vix)
+    sg = sg[valid]
+    vix = vix[valid]
 
-    # Remove NaN/Inf
-    valid = np.all(np.isfinite(data), axis=1)
-    data = data[valid]
-
-    if len(data) < max_lag + 10:
+    if len(sg) < max_lag + 10:
         return {"test": "Granger_Causality", "skipped": True, "reason": "Insufficient data"}
 
-    results_by_lag: List[Dict[str, Any]] = []
+    # ADF stationarity pre-check
+    adf_sg = _run_adf_test(sg, "spectral_gap")
+    adf_vix = _run_adf_test(vix, "vix")
+    logger.info("ADF spectral_gap: stat=%.3f, p=%.4f, stationary=%s",
+                adf_sg["adf_statistic"], adf_sg["p_value"], adf_sg["stationary_5pct"])
+    logger.info("ADF VIX: stat=%.3f, p=%.4f, stationary=%s",
+                adf_vix["adf_statistic"], adf_vix["p_value"], adf_vix["stationary_5pct"])
+
+    # Difference non-stationary series
+    sg_use = np.diff(sg) if not adf_sg["stationary_5pct"] else sg
+    vix_use = np.diff(vix) if not adf_vix["stationary_5pct"] else vix
+    # Align after differencing
+    min_use = min(len(sg_use), len(vix_use))
+    sg_use = sg_use[:min_use]
+    vix_use = vix_use[:min_use]
+
+    if len(sg_use) < max_lag + 10:
+        return {"test": "Granger_Causality", "skipped": True, "reason": "Insufficient data after differencing"}
+
+    # Bidirectional Granger test with Bonferroni correction
     try:
-        gc_results = grangercausalitytests(data, maxlag=max_lag, verbose=False)
-        for lag in range(1, max_lag + 1):
-            f_stat = gc_results[lag][0]["ssr_ftest"][0]
-            p_value = gc_results[lag][0]["ssr_ftest"][1]
-            results_by_lag.append({
-                "lag": lag,
-                "f_statistic": float(f_stat),
-                "p_value": float(p_value),
-                "significant": float(p_value) < 0.05,
-            })
+        fwd = _granger_one_direction(vix_use, sg_use, max_lag, "spectral_gap -> VIX")
+        rev = _granger_one_direction(sg_use, vix_use, max_lag, "VIX -> spectral_gap")
     except Exception as e:
         logger.warning("Granger causality test failed: %s", e)
         return {"test": "Granger_Causality", "skipped": True, "reason": str(e)}
 
-    min_p = min(r["p_value"] for r in results_by_lag) if results_by_lag else 1.0
-    best_lag = min(results_by_lag, key=lambda r: r["p_value"])["lag"] if results_by_lag else None
+    logger.info("Granger (sg->VIX): best_lag=%s, bonferroni_p=%.4f, sig=%s",
+                fwd["best_lag"], fwd["bonferroni_min_p"], fwd["significant_bonferroni"])
+    logger.info("Granger (VIX->sg): best_lag=%s, bonferroni_p=%.4f, sig=%s",
+                rev["best_lag"], rev["bonferroni_min_p"], rev["significant_bonferroni"])
 
     return {
         "test": "Granger_Causality",
-        "direction": "spectral_gap -> VIX",
+        "adf_checks": {"spectral_gap": adf_sg, "vix": adf_vix},
+        "differenced": {
+            "spectral_gap": not adf_sg["stationary_5pct"],
+            "vix": not adf_vix["stationary_5pct"],
+        },
+        "forward": fwd,
+        "reverse": rev,
         "max_lag": max_lag,
-        "results_by_lag": results_by_lag,
-        "min_p_value": min_p,
-        "best_lag": best_lag,
-        "any_significant": min_p < 0.05,
+        "any_significant": fwd["significant_bonferroni"] or rev["significant_bonferroni"],
     }
 
 
@@ -702,9 +767,10 @@ def main() -> None:
         gc_result = granger_causality_test(spectral_gap_ts, vix_ts)
         all_tests["granger_causality"] = gc_result
         if not gc_result.get("skipped", False):
-            logger.info("Granger causality: min_p=%.4f, best_lag=%s, significant=%s",
-                         gc_result["min_p_value"], gc_result["best_lag"],
-                         gc_result["any_significant"])
+            fwd_p = gc_result["forward"]["bonferroni_min_p"]
+            rev_p = gc_result["reverse"]["bonferroni_min_p"]
+            logger.info("Granger causality (sg->VIX): bonferroni_p=%.4f; (VIX->sg): bonferroni_p=%.4f",
+                         fwd_p, rev_p)
     except Exception as e:
         logger.error("Granger causality test failed: %s", e)
         all_tests["granger_causality"] = {"error": str(e)}

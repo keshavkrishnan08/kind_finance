@@ -121,30 +121,34 @@ class RegimeDetector:
         labels: np.ndarray,
         dates: pd.DatetimeIndex,
         nber_recessions: Optional[List[Tuple[str, str]]] = None,
+        train_end: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Compare detected regimes against NBER recession dates.
+
+        The label-to-recession mapping is learned on training data only
+        (dates <= ``train_end``) to avoid data snooping.  A naive
+        frequency baseline (always predict the majority class) is
+        included for comparison.
 
         Parameters
         ----------
         labels : np.ndarray
-            Predicted regime labels (length *T*).  The method assumes that
-            the regime with *lower mean return* (or equivalently the minority
-            regime, in practice) corresponds to NBER recessions.
+            Predicted regime labels (length *T*).
         dates : pd.DatetimeIndex
             Date index aligned with *labels*.
         nber_recessions : list of (start, end) date strings, optional
             NBER recession date ranges.  If ``None`` a canonical set of
-            post-2000 recessions is used:
-            2001-03 to 2001-11, 2007-12 to 2009-06, 2020-02 to 2020-04.
+            post-2000 recessions is used.
+        train_end : str or None
+            End date of training period for label mapping.  If ``None``,
+            defaults to "2017-12-31".
 
         Returns
         -------
         dict
-            ``accuracy``   -- fraction of days correctly classified.
-            ``precision``  -- precision for recession detection.
-            ``recall``     -- recall for recession detection.
-            ``f1``         -- F-1 score.
-            ``confusion``  -- 2x2 confusion matrix as np.ndarray.
+            ``accuracy``, ``precision``, ``recall``, ``f1``,
+            ``confusion``, ``naive_accuracy``, ``recession_label``,
+            ``mapping_learned_on``.
         """
         if nber_recessions is None:
             nber_recessions = [
@@ -152,6 +156,8 @@ class RegimeDetector:
                 ("2007-12-01", "2009-06-30"),
                 ("2020-02-01", "2020-04-30"),
             ]
+        if train_end is None:
+            train_end = "2017-12-31"
 
         # Build NBER binary indicator
         nber_binary = np.zeros(len(dates), dtype=int)
@@ -159,58 +165,68 @@ class RegimeDetector:
             mask = (dates >= pd.Timestamp(start)) & (dates <= pd.Timestamp(end))
             nber_binary[mask] = 1
 
-        # Determine which label maps to "recession"
+        # Learn label mapping on training data only
+        train_mask = dates <= pd.Timestamp(train_end)
+        labels_train = labels[train_mask]
+        nber_train = nber_binary[train_mask]
+
         unique_labels = np.unique(labels)
-        best_mapping: Optional[Dict[int, int]] = None
-        best_accuracy = -1.0
+        best_recession_label = unique_labels[0]
+        best_train_acc = -1.0
+        invert = False
 
-        # Try each label as the recession label to find optimal mapping
-        for recession_label in unique_labels:
-            pred_binary = (labels == recession_label).astype(int)
-            acc = float(np.mean(pred_binary == nber_binary))
-            if acc > best_accuracy:
-                best_accuracy = acc
-                best_mapping = {recession_label: 1}
+        for rl in unique_labels:
+            pred_train = (labels_train == rl).astype(int)
+            acc = float(np.mean(pred_train == nber_train))
+            if acc > best_train_acc:
+                best_train_acc = acc
+                best_recession_label = rl
+                invert = False
+            # Also check inverted mapping
+            inv_acc = float(np.mean((1 - pred_train) == nber_train))
+            if inv_acc > best_train_acc:
+                best_train_acc = inv_acc
+                best_recession_label = rl
+                invert = True
 
-        # Build predicted binary with best mapping
-        recession_label = list(best_mapping.keys())[0]  # type: ignore[union-attr]
-        pred_binary = (labels == recession_label).astype(int)
+        # Apply mapping to FULL dataset
+        pred_binary = (labels == best_recession_label).astype(int)
+        if invert:
+            pred_binary = 1 - pred_binary
 
-        # Also try the inverse mapping
-        inv_pred = 1 - pred_binary
-        inv_accuracy = float(np.mean(inv_pred == nber_binary))
-        if inv_accuracy > best_accuracy:
-            pred_binary = inv_pred
-            best_accuracy = inv_accuracy
+        # Naive baseline: always predict majority class
+        recession_rate = float(np.mean(nber_binary))
+        naive_accuracy = max(recession_rate, 1.0 - recession_rate)
 
-        # Metrics
+        # Metrics on full dataset
         tp = int(np.sum((pred_binary == 1) & (nber_binary == 1)))
         fp = int(np.sum((pred_binary == 1) & (nber_binary == 0)))
         fn = int(np.sum((pred_binary == 0) & (nber_binary == 1)))
         tn = int(np.sum((pred_binary == 0) & (nber_binary == 0)))
 
+        accuracy = float(np.mean(pred_binary == nber_binary))
         precision = tp / max(tp + fp, 1)
         recall = tp / max(tp + fn, 1)
-        f1 = (
-            2 * precision * recall / max(precision + recall, 1e-12)
-        )
+        f1 = 2 * precision * recall / max(precision + recall, 1e-12)
 
         confusion = np.array([[tn, fp], [fn, tp]])
 
         logger.info(
-            "NBER comparison: accuracy=%.3f, precision=%.3f, recall=%.3f, F1=%.3f",
-            best_accuracy,
-            precision,
-            recall,
-            f1,
+            "NBER comparison: accuracy=%.3f (naive=%.3f), precision=%.3f, "
+            "recall=%.3f, F1=%.3f",
+            accuracy, naive_accuracy, precision, recall, f1,
         )
 
         return {
-            "accuracy": best_accuracy,
+            "accuracy": accuracy,
             "precision": precision,
             "recall": recall,
             "f1": f1,
             "confusion": confusion,
+            "naive_accuracy": naive_accuracy,
+            "recession_label": int(best_recession_label),
+            "mapping_learned_on": f"train (dates <= {train_end})",
+            "mapping_inverted": invert,
         }
 
     # ------------------------------------------------------------------
