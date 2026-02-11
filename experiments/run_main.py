@@ -61,7 +61,10 @@ from src.analysis.nonequilibrium import (
     fluctuation_theorem_ratio,
     eigenvalue_complex_plane_statistics,
 )
-from src.model.entropy import estimate_empirical_entropy_production_with_ci
+from src.model.entropy import (
+    estimate_empirical_entropy_production_with_ci,
+    estimate_per_sample_entropy_production,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -493,19 +496,22 @@ def post_training_analysis(
         irrev_method = "svd_fallback"
     logger.info("Irreversibility field computed via %s", irrev_method)
 
-    # --- Spectral gap ---
+    # --- Spectral gap (continuous-time: |Re(ln lambda_2)| / tau) ---
+    eig_tensor = torch.as_tensor(eigenvalues_sorted)
+    spectral_gap = float(KoopmanAnalyzer.compute_spectral_gap(eig_tensor, tau=tau))
     magnitudes = np.abs(eigenvalues_sorted)
-    spectral_gap = float(magnitudes[0] - magnitudes[1]) if len(magnitudes) > 1 else 0.0
 
     # --- Entropy decomposition ---
     # Spectral entropy production: sigma_k = omega_k^2 * A_k
+    # A_k = <u_k * v_k> (bilinear product of right/left eigenfunctions)
     omega = np.angle(eigenvalues_sorted) / tau
-    A_k = np.mean(u_np ** 2, axis=0)  # mean squared amplitude per mode
+    A_k_full = np.mean(u_np * v_np, axis=0)  # bilinear amplitude per mode
     # Reorder A_k to match eigenvalue ordering
-    if len(A_k) == len(omega):
-        entropy_per_mode = omega ** 2 * A_k[order] if len(A_k) == len(order) else omega ** 2 * A_k
+    if len(A_k_full) == len(order):
+        A_k = np.abs(A_k_full[order])
     else:
-        entropy_per_mode = omega ** 2 * A_k[:len(omega)]
+        A_k = np.abs(A_k_full[:len(omega)])
+    entropy_per_mode = omega ** 2 * A_k
 
     entropy_total = float(np.sum(np.abs(entropy_per_mode)))
 
@@ -524,7 +530,7 @@ def post_training_analysis(
     entropy_df = pd.DataFrame({
         "mode": np.arange(len(entropy_per_mode)),
         "frequency_omega": omega,
-        "amplitude_A_k": A_k[:len(omega)] if len(A_k) >= len(omega) else A_k,
+        "amplitude_A_k": A_k,
         "entropy_production": np.abs(entropy_per_mode),
         "entropy_fraction": np.abs(entropy_per_mode) / max(entropy_total, 1e-15),
     })
@@ -552,8 +558,11 @@ def post_training_analysis(
     neq_results["complex_fraction"] = eig_stats["complex_fraction"]
     neq_results["spectral_radius"] = eig_stats["spectral_radius"]
 
-    # Fluctuation theorem on entropy production samples
-    ft_result = fluctuation_theorem_ratio(np.abs(entropy_per_mode))
+    # Fluctuation theorem: requires per-sample entropy production (N values)
+    ep_samples = estimate_per_sample_entropy_production(
+        returns_tensor, tau=tau, n_samples=5000,
+    )
+    ft_result = fluctuation_theorem_ratio(ep_samples)
     neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
     neq_results["ft_log_deviation"] = ft_result["log_deviation"]
 

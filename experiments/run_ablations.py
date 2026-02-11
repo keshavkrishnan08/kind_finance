@@ -37,6 +37,7 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ---------------------------------------------------------------------------
 
+from src.constants import DATE_RANGES
 from src.utils.config import load_config, merge_configs, set_nested, save_config
 from src.utils.reproducibility import set_seed, get_device
 from src.data.preprocessing import (
@@ -52,12 +53,6 @@ from src.model.koopman import KoopmanAnalyzer
 logger = logging.getLogger(__name__)
 
 N_SEEDS_DEFAULT = 10
-
-DATE_RANGES = {
-    "train": ("2004-01-01", "2017-12-31"),
-    "val": ("2018-01-01", "2019-12-31"),
-    "test": ("2020-01-01", "2023-12-31"),
-}
 
 
 # =====================================================================

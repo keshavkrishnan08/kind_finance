@@ -29,7 +29,8 @@ def _kde_entropy_production(
     x_t: np.ndarray,
     x_tau: np.ndarray,
     bw_method: str = "scott",
-) -> float:
+    return_samples: bool = False,
+):
     """Core KDE log-ratio entropy production on pre-built transition pairs.
 
     Parameters
@@ -40,11 +41,15 @@ def _kde_entropy_production(
         Observations at time *t + tau*.
     bw_method : str
         Bandwidth selection method for ``gaussian_kde``.
+    return_samples : bool
+        If True, return per-sample log-ratios instead of the mean.
 
     Returns
     -------
-    float
-        Estimated entropy production rate (clamped >= 0).
+    float or ndarray
+        If ``return_samples`` is False (default), returns the estimated
+        entropy production rate (clamped >= 0).  If True, returns
+        per-sample log-ratios as ndarray of shape ``(N,)``.
     """
     joint_fwd = np.concatenate([x_t, x_tau], axis=1).T   # (2d, N)
     joint_rev = np.concatenate([x_tau, x_t], axis=1).T   # (2d, N)
@@ -56,8 +61,13 @@ def _kde_entropy_production(
         log_p_fwd = kde_fwd.logpdf(joint_fwd)   # (N,)
         log_p_rev = kde_rev.logpdf(joint_fwd)    # (N,)
 
-        sigma = float(np.mean(log_p_fwd - log_p_rev))
+        per_sample = log_p_fwd - log_p_rev
+        if return_samples:
+            return per_sample
+        sigma = float(np.mean(per_sample))
     except np.linalg.LinAlgError:
+        if return_samples:
+            return np.zeros(x_t.shape[0])
         sigma = 0.0
 
     return max(sigma, 0.0)
@@ -123,6 +133,51 @@ def estimate_empirical_entropy_production(
     sigma = _kde_entropy_production(x_t, x_tau, bw_method)
 
     return torch.tensor(sigma, dtype=torch.float32)
+
+
+def estimate_per_sample_entropy_production(
+    returns: Tensor,
+    tau: int,
+    bandwidth: Optional[float] = None,
+    n_samples: int = 5000,
+) -> np.ndarray:
+    """Per-sample entropy production log-ratios for fluctuation theorem tests.
+
+    Parameters
+    ----------
+    returns : Tensor, shape ``(T,)`` or ``(T, d)``
+        Return time series.
+    tau : int
+        Lag (in discrete time steps).
+    bandwidth : float or None
+        KDE bandwidth.  If ``None``, Scott's rule is used.
+    n_samples : int
+        Maximum number of transition pairs (sub-sampled if longer).
+
+    Returns
+    -------
+    ndarray, shape ``(N,)``
+        Per-sample log p_fwd / p_rev values.
+    """
+    r = returns.detach().cpu().numpy()
+    if r.ndim == 1:
+        r = r[:, np.newaxis]
+
+    T, d = r.shape
+    if T <= tau:
+        return np.zeros(0)
+
+    x_t = r[:-tau]
+    x_tau = r[tau:]
+    n_pairs = x_t.shape[0]
+
+    if n_pairs > n_samples:
+        idx = np.random.choice(n_pairs, size=n_samples, replace=False)
+        x_t = x_t[idx]
+        x_tau = x_tau[idx]
+
+    bw_method = bandwidth if bandwidth is not None else "scott"
+    return _kde_entropy_production(x_t, x_tau, bw_method, return_samples=True)
 
 
 def estimate_empirical_entropy_production_with_ci(
