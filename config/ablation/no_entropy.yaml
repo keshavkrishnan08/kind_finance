@@ -1,0 +1,12 @@
+# =============================================================================
+# Ablation A1: No Entropy Regularization
+# =============================================================================
+# Tests the effect of removing the entropy penalty from the loss function.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+losses:
+  alpha_entropy: 0.0

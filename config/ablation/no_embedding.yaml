@@ -1,0 +1,12 @@
+# =============================================================================
+# Ablation A9: No Time-Delay Embedding
+# =============================================================================
+# Tests the effect of disabling time-delay embedding (embedding_dim=1).
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+data:
+  embedding_dim: 1

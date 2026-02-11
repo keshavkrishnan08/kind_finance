@@ -1,0 +1,43 @@
+# =============================================================================
+# KTND-Finance: Default Configuration
+# =============================================================================
+# Full default configuration per PRD Section 6.2
+# All other configs inherit from this file.
+# =============================================================================
+
+# --- Model Architecture ---
+model:
+  n_modes: 10
+  hidden_dims: [128, 128, 64]
+  dropout: 0.1
+  epsilon: 1.0e-6
+  share_weights: false
+
+# --- Data Pipeline ---
+data:
+  tau: 5
+  embedding_dim: 5
+  standardization: zscore
+
+# --- Training ---
+training:
+  batch_size: 512
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-5
+  n_epochs: 500
+  patience: 50
+  scheduler: cosine
+
+# --- Loss Function Weights ---
+losses:
+  alpha_entropy: 0.1
+  beta_orthogonality: 1.0
+  gamma_regularization: 1.0e-5
+
+# --- Rolling Window ---
+rolling:
+  window_size: 500
+  stride: 5
+
+# --- Reproducibility ---
+seed: 42

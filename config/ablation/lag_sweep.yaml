@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A6: Time Lag (tau) Sweep
+# =============================================================================
+# Sweeps over different time delay embedding lags.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+sweep:
+  parameter: data.tau
+  values: [1, 2, 5, 10, 20, 50]

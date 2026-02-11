@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A12: Robust Standardization
+# =============================================================================
+# Tests the effect of using robust (median/IQR) standardization instead of
+# z-score (mean/std) standardization.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+data:
+  standardization: robust

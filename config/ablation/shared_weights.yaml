@@ -1,0 +1,12 @@
+# =============================================================================
+# Ablation A4: Shared Weights
+# =============================================================================
+# Tests the effect of sharing weights across all Koopman modes.
+# Inherits all defaults from default.yaml.
+# =============================================================================
+
+defaults:
+  - ../default
+
+model:
+  share_weights: true
