@@ -215,6 +215,7 @@ class FigureGenerator:
     def plot_eigenvalue_spectrum(
         eigenvalues: np.ndarray,
         entropy_contributions: np.ndarray,
+        eigenfunctions: np.ndarray = None,
     ) -> plt.Figure:
         """Koopman eigenvalue spectrum analysis (Figure 3).
 
@@ -227,6 +228,10 @@ class FigureGenerator:
             Koopman eigenvalues.
         entropy_contributions : ndarray, shape (K,)
             Per-mode entropy contribution (non-negative reals).
+        eigenfunctions : ndarray, shape (T, K), optional
+            Eigenfunction time series for computing real Pearson
+            correlations.  If ``None``, the correlation panel shows
+            decay-rate similarity instead.
 
         Returns
         -------
@@ -269,14 +274,17 @@ class FigureGenerator:
         ax1.set_ylabel("Entropy contribution (nats)")
         ax1.set_title("(b) Per-mode entropy")
 
-        # (c) Mode-correlation heatmap
+        # (c) Mode-correlation heatmap (real Pearson correlation)
         ax2 = fig.add_subplot(gs[0, 2])
-        # Build a synthetic correlation matrix from eigenvalue magnitudes
-        magnitudes = np.abs(eigenvalues)
-        corr_matrix = np.outer(magnitudes, magnitudes) / (
-            np.max(magnitudes) ** 2 + 1e-12
-        )
-        np.fill_diagonal(corr_matrix, 1.0)
+        if eigenfunctions is not None and eigenfunctions.shape[1] == K:
+            # Real eigenfunction correlation
+            corr_matrix = np.corrcoef(eigenfunctions.T)
+        else:
+            # Fallback: decay-rate similarity (cosine of log-magnitude distance)
+            log_mag = np.log(np.clip(np.abs(eigenvalues), 1e-15, None))
+            diffs = np.abs(log_mag[:, None] - log_mag[None, :])
+            corr_matrix = np.exp(-diffs)
+            np.fill_diagonal(corr_matrix, 1.0)
         im = ax2.imshow(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1)
         ax2.set_xlabel("Mode")
         ax2.set_ylabel("Mode")

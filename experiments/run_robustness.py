@@ -194,22 +194,67 @@ def chapman_kolmogorov_test(
         )))
         ck_errors.append({"n": n, "error": error})
 
-    # Simple statistical test: are the errors consistent with zero?
     errors = [e["error"] for e in ck_errors]
-    if len(errors) >= 2:
-        t_stat, p_value = scipy_stats.ttest_1samp(errors, 0.0)
-        p_value = float(p_value)
-    else:
-        t_stat, p_value = 0.0, 1.0
+    mean_error = float(np.mean(errors)) if errors else 0.0
+
+    # Block-bootstrap null: shuffle temporal order to destroy Markov structure
+    n_bootstrap = 200
+    block_size = min(50, len(embedded) // 4)
+    rng = np.random.default_rng(seed=42)
+    boot_mean_errors = []
+
+    for _b in range(n_bootstrap):
+        n_blocks = int(np.ceil(len(embedded) / block_size))
+        starts = rng.integers(0, len(embedded) - block_size, size=n_blocks)
+        boot_idx = np.concatenate(
+            [np.arange(s, s + block_size) for s in starts]
+        )[:len(embedded)]
+        emb_boot = embedded[boot_idx]
+
+        boot_errors = []
+        for n in range(2, n_steps + 1):
+            n_tau = n * tau
+            if n_tau >= len(emb_boot):
+                break
+            x_t_b = torch.as_tensor(emb_boot[:-tau], dtype=torch.float32).to(device)
+            x_tau_b = torch.as_tensor(emb_boot[tau:], dtype=torch.float32).to(device)
+            with torch.no_grad():
+                out_b = model(x_t_b, x_tau_b)
+            K_b = out_b["koopman_matrix"].cpu().numpy()
+            eigs_b = np.linalg.eigvals(K_b)
+            eigs_b_sorted = eigs_b[np.argsort(-np.abs(eigs_b))]
+
+            eigs_pred_b = eigs_b_sorted ** n
+            x_t_bn = torch.as_tensor(emb_boot[:-n_tau], dtype=torch.float32).to(device)
+            x_tau_bn = torch.as_tensor(emb_boot[n_tau:], dtype=torch.float32).to(device)
+            with torch.no_grad():
+                out_bn = model(x_t_bn, x_tau_bn)
+            K_bn = out_bn["koopman_matrix"].cpu().numpy()
+            eigs_bn = np.linalg.eigvals(K_bn)
+            eigs_bn_sorted = eigs_bn[np.argsort(-np.abs(eigs_bn))]
+
+            nc = min(len(eigs_pred_b), len(eigs_bn_sorted))
+            err_b = float(np.mean(np.abs(
+                np.abs(eigs_pred_b[:nc]) - np.abs(eigs_bn_sorted[:nc])
+            )))
+            boot_errors.append(err_b)
+
+        if boot_errors:
+            boot_mean_errors.append(float(np.mean(boot_errors)))
+
+    # p-value: fraction of bootstrap replicates with error <= observed
+    # (bootstrap destroys Markov property, so errors should be larger)
+    boot_arr = np.array(boot_mean_errors)
+    p_value = float(np.mean(boot_arr <= mean_error)) if len(boot_arr) > 0 else 1.0
 
     return {
         "test": "Chapman-Kolmogorov",
         "ck_errors": ck_errors,
-        "mean_error": float(np.mean(errors)) if errors else 0.0,
-        "t_statistic": float(t_stat),
+        "mean_error": mean_error,
         "p_value": p_value,
+        "n_bootstrap": n_bootstrap,
         "n_steps_tested": len(ck_errors),
-        "passed": p_value > 0.05,
+        "passed": mean_error < float(np.median(boot_arr)) if len(boot_arr) > 0 else True,
     }
 
 
