@@ -138,6 +138,11 @@ def run_single_trial(
         dropout=dropout,
     ).to(device)
 
+    # Apply shared weights if configured (lobe_tau = lobe_t)
+    if model_cfg.get("share_weights", False):
+        model.lobe_tau = model.lobe_t
+        logger.debug("Shared weights: lobe_tau = lobe_t")
+
     # -- Training -------------------------------------------------------
     train_cfg = config.get("training", {})
     loss_cfg = config.get("losses", {})
@@ -163,7 +168,9 @@ def run_single_trial(
                 out, tau=float(tau),
                 w_vamp2=loss_cfg.get("w_vamp2", 1.0),
                 w_orthogonality=loss_cfg.get("beta_orthogonality", 0.01),
-                w_spectral=loss_cfg.get("gamma_regularization", 0.1),
+                w_entropy=loss_cfg.get("alpha_entropy", 0.1),
+                w_spectral=loss_cfg.get("spectral_penalty_weight",
+                           loss_cfg.get("gamma_regularization", 0.1)),
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -216,21 +223,27 @@ def run_single_trial(
         out = model(x_t_full, x_tau_full)
 
     eigenvalues = out["eigenvalues"].cpu().numpy()
+    eig_tensor = out["eigenvalues"]
     magnitudes = np.abs(eigenvalues)
     order = np.argsort(-magnitudes)
     sorted_mag = magnitudes[order]
 
-    metrics["spectral_gap"] = float(sorted_mag[0] - sorted_mag[1]) if len(sorted_mag) > 1 else 0.0
+    # Use correct continuous-time spectral gap: |Re(ln λ_2)|/τ
+    metrics["spectral_gap"] = float(
+        KoopmanAnalyzer.compute_spectral_gap(eig_tensor, tau=float(tau))
+    )
 
     # Eigenvalue CV (coefficient of variation)
     metrics["eigenvalue_cv"] = float(np.std(sorted_mag) / max(np.mean(sorted_mag), 1e-15))
 
-    # Entropy total
+    # Entropy total using bilinear amplitude A_k = mean(u_k * v_k)
     omega = np.angle(eigenvalues[order]) / tau
     x_all = torch.as_tensor(embedded, dtype=torch.float32).to(device)
     with torch.no_grad():
         u, v = model.compute_eigenfunctions(x_all, out)
-    A_k = np.mean(u.cpu().numpy() ** 2, axis=0)
+    u_np = u.cpu().numpy()
+    v_np = v.cpu().numpy()
+    A_k = np.mean(u_np * v_np, axis=0)  # bilinear, not u^2
     entropy_per_mode = omega ** 2 * A_k[:len(omega)]
     metrics["entropy_total"] = float(np.sum(np.abs(entropy_per_mode)))
 
@@ -285,18 +298,30 @@ def run_ablation_seeds(
     """Run one ablation config across multiple seeds, return aggregated stats."""
     logger.info("Running ablation '%s' with %d seeds ...", name, n_seeds)
 
+    def _run_with_progress(seed):
+        t0 = time.time()
+        result = run_single_trial(config, seed, device_str)
+        elapsed = time.time() - t0
+        status = "OK" if "error" not in result else "FAIL"
+        vamp2 = result.get("vamp2", "N/A")
+        vamp2_str = f"{vamp2:.4f}" if isinstance(vamp2, float) else str(vamp2)
+        print(f"    seed {seed}/{n_seeds-1}: {status}  VAMP-2={vamp2_str}  ({elapsed:.0f}s)",
+              flush=True)
+        return result
+
     try:
         from joblib import Parallel, delayed
-        results_list = Parallel(n_jobs=n_jobs, prefer="threads")(
-            delayed(run_single_trial)(config, seed, device_str)
-            for seed in range(n_seeds)
-        )
+        if n_jobs == 1:
+            # Sequential with progress (joblib suppresses print in parallel)
+            results_list = [_run_with_progress(seed) for seed in range(n_seeds)]
+        else:
+            results_list = Parallel(n_jobs=n_jobs, prefer="threads")(
+                delayed(run_single_trial)(config, seed, device_str)
+                for seed in range(n_seeds)
+            )
     except ImportError:
         logger.warning("joblib not available; falling back to sequential execution.")
-        results_list = [
-            run_single_trial(config, seed, device_str)
-            for seed in range(n_seeds)
-        ]
+        results_list = [_run_with_progress(seed) for seed in range(n_seeds)]
 
     # Filter out error results
     valid = [r for r in results_list if "error" not in r]
@@ -321,6 +346,24 @@ def run_ablation_seeds(
 # =====================================================================
 # CLI
 # =====================================================================
+
+def _save_summary(all_results: List[Dict[str, Any]], csv_path: Path) -> pd.DataFrame:
+    """Build and save the summary DataFrame. Returns the DataFrame."""
+    summary_df = pd.DataFrame(all_results)
+    priority_cols = ["name", "n_valid"]
+    metric_cols = [
+        "vamp2_mean", "vamp2_std",
+        "spectral_gap_mean", "spectral_gap_std",
+        "entropy_total_mean", "entropy_total_std",
+        "eigenvalue_cv_mean", "eigenvalue_cv_std",
+    ]
+    existing_priority = [c for c in priority_cols if c in summary_df.columns]
+    existing_metrics = [c for c in metric_cols if c in summary_df.columns]
+    remaining = [c for c in summary_df.columns if c not in existing_priority + existing_metrics]
+    summary_df = summary_df[existing_priority + existing_metrics + remaining]
+    summary_df.to_csv(csv_path, index=False)
+    return summary_df
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -369,10 +412,45 @@ def main() -> None:
     # Also run the base config as reference
     all_ablations.insert(0, ("baseline", copy.deepcopy(base_config)))
 
-    # Run all ablations
+    # Output directory for incremental saves
+    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs" / "results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = output_dir / "ablation_summary.csv"
+
+    # Resume from partial results if they exist
     all_results: List[Dict[str, Any]] = []
+    completed_names: set = set()
+    if csv_path.exists():
+        try:
+            prev = pd.read_csv(csv_path)
+            all_results = prev.to_dict("records")
+            completed_names = {r["name"] for r in all_results if r.get("n_valid", 0) > 0}
+            if completed_names:
+                logger.info("Resuming: %d variants already completed, skipping them",
+                            len(completed_names))
+        except Exception:
+            pass
+
+    # Run all ablations with incremental saves
+    total_start = time.time()
+    n_total = len(all_ablations)
     for i, (name, cfg) in enumerate(all_ablations):
-        logger.info("[%d/%d] Ablation: %s", i + 1, len(all_ablations), name)
+        if name in completed_names:
+            logger.info("[%d/%d] SKIP (already done): %s", i + 1, n_total, name)
+            continue
+
+        elapsed_so_far = time.time() - total_start
+        completed_count = sum(1 for r in all_results if r.get("n_valid", 0) > 0)
+        new_completed = completed_count - len(completed_names)
+        if new_completed > 0:
+            avg_per_variant = elapsed_so_far / new_completed
+            remaining_count = n_total - (i)
+            eta_min = avg_per_variant * remaining_count / 60
+            logger.info("[%d/%d] Ablation: %s  (ETA: ~%.0f min remaining)",
+                        i + 1, n_total, name, eta_min)
+        else:
+            logger.info("[%d/%d] Ablation: %s", i + 1, n_total, name)
+
         t0 = time.time()
         try:
             result = run_ablation_seeds(
@@ -389,30 +467,17 @@ def main() -> None:
             logger.error("  -> FAILED: %s\n%s", e, traceback.format_exc())
             all_results.append({"name": name, "n_valid": 0, "error": str(e)})
 
-    # Build summary table
-    summary_df = pd.DataFrame(all_results)
+        # Incremental save after each variant (survives disconnection)
+        _save_summary(all_results, csv_path)
+        logger.info("  -> Incremental save: %s (%d variants so far)", csv_path.name, len(all_results))
 
-    # Reorder columns for readability
-    priority_cols = ["name", "n_valid"]
-    metric_cols = [
-        "vamp2_mean", "vamp2_std",
-        "spectral_gap_mean", "spectral_gap_std",
-        "entropy_total_mean", "entropy_total_std",
-        "eigenvalue_cv_mean", "eigenvalue_cv_std",
-    ]
-    existing_priority = [c for c in priority_cols if c in summary_df.columns]
-    existing_metrics = [c for c in metric_cols if c in summary_df.columns]
-    remaining = [c for c in summary_df.columns if c not in existing_priority + existing_metrics]
-    summary_df = summary_df[existing_priority + existing_metrics + remaining]
+    # Final save
+    summary_df = _save_summary(all_results, csv_path)
 
-    # Save
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs" / "results"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / "ablation_summary.csv"
-    summary_df.to_csv(csv_path, index=False)
-
+    total_elapsed = time.time() - total_start
     print("\n" + "=" * 80)
     print("KTND-Finance: Ablation Summary")
+    print(f"  {len(all_results)} variants, {args.n_seeds} seeds each, {total_elapsed/60:.1f} min total")
     print("=" * 80)
     print(summary_df.to_string(index=False))
     print(f"\nSaved to: {csv_path}")

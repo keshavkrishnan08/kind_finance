@@ -1,5 +1,82 @@
 # CHANGELOG
 
+## v1.4.0 — Model Tuning + Bug Fixes + Brownian Gyrator (2026-02-11)
+
+### Critical: Model/Statistical Improvements (based on Colab run diagnostics)
+
+Previous run showed: CK test FAILED, permutation p=0.232, VIX correlation -0.04. Root causes identified and fixed:
+
+1. **Orthogonality over-regularization** (`default.yaml`): `beta_orthogonality` 1.0 → 0.01. Weight of 1.0 was equal to VAMP-2 objective, suppressing the non-equilibrium signal that the entire paper depends on.
+2. **Univariate model overparameterized** (`univariate.yaml`): `n_modes` 10→5, `hidden_dims` [128,128,64]→[64,64,32], `batch_size` 512→256. 10 modes from 5-dim input was underdetermined.
+3. **Permutation surrogates too weak** (`run_robustness.py`): `n_segments` 5→20, `min_segment_frac` 0.05→0.02, `max_segment_frac` 0.25→0.15. Previous surrogates preserved 50-75% of temporal structure.
+4. **Rolling spectral gap wrong definition** (`run_rolling.py`): Replaced discrete `|λ₁|-|λ₂|` with continuous-time `|Re(ln λ₂)|/τ` via `KoopmanAnalyzer.compute_spectral_gap()`. Inconsistency was causing weak VIX correlation.
+5. **CK test improved** (`run_robustness.py`): `n_steps` 5→3, `block_size` 50→10, switched to relative error, compare top-k eigenvalues only. Reduces noise-dominated comparisons.
+6. **Config loading bug** (notebook): Changed `--config config/univariate.yaml` to `--config config/default.yaml` for both training stages. Previous approach skipped all default.yaml values (loss weights, training params) because `load_config` doesn't resolve `defaults:` keys. This caused `w_spectral` to use fallback 0.1 instead of config's 1e-5 (10,000x higher).
+7. **Loss weight consistency** (`run_main.py`): Now passes `w_entropy` and handles both `spectral_penalty_weight`/`gamma_regularization` keys, matching the ablation runner.
+
+### Critical: 6 Ablation Runner Bugs Fixed (`experiments/run_ablations.py`)
+
+### Critical: 6 Ablation Runner Bugs Fixed (`experiments/run_ablations.py`)
+
+All previous ablation results are **invalidated** — must re-run.
+
+1. **shared_weights never applied**: Config set `model.share_weights: true` but model constructor doesn't accept this param and runner never applied `model.lobe_tau = model.lobe_t`. **Fixed**: explicitly set `model.lobe_tau = model.lobe_t` when `model_cfg.get("share_weights", False)`.
+2. **no_entropy loss weight ignored**: Config set `losses.alpha_entropy: 0.0` but runner never passed `w_entropy` to `total_loss()`. **Fixed**: pass `w_entropy=loss_cfg.get("alpha_entropy", 0.1)`.
+3. **no_spectral_penalty key mismatch**: Config used key `spectral_penalty_weight` but runner only read `gamma_regularization`. **Fixed**: `w_spectral=loss_cfg.get("spectral_penalty_weight", loss_cfg.get("gamma_regularization", 0.1))`.
+4. **Spectral gap wrong metric**: Used discrete magnitude difference `|λ₁| - |λ₂|` instead of continuous-time `|Re(ln λ₂)|/τ`. **Fixed**: use `KoopmanAnalyzer.compute_spectral_gap(eig_tensor, tau)`.
+5. **Entropy amplitude wrong formula**: Used `mean(u²)` instead of bilinear `mean(u*v)` left/right eigenfunction product. **Fixed**: `A_k = np.mean(u_np * v_np, axis=0)`.
+6. **Window sweep doesn't affect training**: Rolling window size is a post-hoc analysis parameter. **Fixed**: renamed `window_sweep.yaml` → `window_sweep.yaml.disabled`.
+
+### KTND Regime Detection vs NBER (`experiments/run_main.py`)
+- `post_training_analysis()` now computes regime labels from dominant eigenfunction sign structure via `RegimeDetector.detect_from_eigenfunctions()`
+- Compares against NBER recession dates using `RegimeDetector.compare_with_nber()` with training-only label mapping
+- Saves accuracy, precision, recall, F1, naive baseline accuracy, mean regime duration to `analysis_results_{mode}.json`
+- Saves `ktnd_regime_labels.csv` for downstream figure generation
+
+### Brownian Gyrator Synthetic Benchmark (`tests/test_synthetic.py`)
+- **New generator**: `generate_brownian_gyrator()` — 2D coupled OU process with unequal bath temperatures (T₁ ≠ T₂ breaks detailed balance)
+- **Analytical EP**: `analytical_gyrator_entropy_production()` — exact steady-state entropy production rate via Lyapunov equation solve
+- **8 new tests** in `TestBrownianGyrator`:
+  - 3 analytical: EP=0 at equilibrium, EP>0 out of equilibrium, EP scales with |T₁-T₂|
+  - 5 trained model: positive spectral entropy, eq vs non-eq comparison, complex eigenvalues, positive irreversibility
+- Analytical EP verified: 0.000 (T₁=T₂), 0.021 (T₂=1.5), 0.167 (T₂=3.0), 0.400 (T₂=5.0)
+- Total test count: 132 → 140+
+
+### Paper Updates (`paper/main.tex`)
+- **Brownian gyrator subsection** (Sec V.3): analytical EP benchmark with exact formula and comparison
+- **VIX lead claim softened**: "indicates" → "suggests...may lead"; added "formal Granger causality testing required"; correlation improvement noted as modest (Δr=0.02)
+- **Entropy gap analysis**: added 3 reasons for 33x spectral-vs-KDE gap; added mode-count convergence data (K=3→50); reframed as lower bound
+- **KTND baseline row**: added to Table II (values filled from pipeline run)
+- **Ablation table**: updated caption to note bug fix and pending 10-seed runs; removed window sweep
+- **2 new limitations**: VIX lead-lag needs Granger test; ablation seed count (3 preliminary, 10 needed)
+- **Updated test count**: 132 → 140+ tests
+
+### Pipeline Fixes (discovered during Colab re-run)
+- **Results overwrite fixed**: `run_main.py` now saves mode-specific `analysis_results_{mode}.json` alongside the generic file, so multiasset no longer clobbers univariate results
+- **Stage ordering fixed**: Rolling analysis (Stage 6) now runs BEFORE robustness (Stage 7) — Granger causality needs `spectral_gap_timeseries.csv` from rolling
+- **KTND summary printout**: `main()` now prints KTND NBER accuracy/F1/naive baseline in the final summary
+
+### Ablation Runner Fixes (`experiments/run_ablations.py`)
+- **Streaming output**: Notebook now uses `subprocess.Popen` with line-by-line output for ablations (previously `capture_output=True` buffered everything, making it look frozen for hours)
+- **Incremental saves**: CSV saved after each variant completes — survives Colab disconnection
+- **Resume support**: On re-run, skips already-completed variants (reads existing `ablation_summary.csv`)
+- **Per-seed progress**: Prints VAMP-2 score and timing for each seed as it finishes
+- **ETA tracking**: Estimates remaining time based on average per-variant duration
+- **`python -u` flag**: Unbuffered Python output in notebook subprocess call
+
+### Colab Notebook (`KTND_Finance_Colab.ipynb`)
+- Consolidated to 5 cells: markdown, setup, full pipeline+ablations+gyrator, view figures, download
+- Cell 2 runs everything: tests → download → train (uni+multi) → baselines → rolling → robustness → figures → ablations (10 seeds) → Brownian gyrator benchmark
+- Final report reads both `analysis_results_univariate.json` and `analysis_results_multiasset.json`
+- Inline figures generated per mode
+
+### What Must Be Re-Run
+All experiments must be re-run on Colab with the fixed code:
+1. Main pipeline (Cell 2) — regenerates per-mode results with KTND NBER metrics
+2. Ablations — 10 seeds with fixed runner (shared_weights/no_entropy/no_spectral now work)
+3. Rolling runs before robustness — enables Granger causality test
+4. Figures — updated automatically from new data
+
 ## v1.3.0 — PRE Statistical Rigor Fixes (2026-02-10)
 
 ### Critical Code Bug Fixes

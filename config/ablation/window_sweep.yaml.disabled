@@ -1,0 +1,13 @@
+# =============================================================================
+# Ablation A7: Rolling Window Size Sweep
+# =============================================================================
+# NOTE: Removed from ablation study.  Rolling window size is a post-hoc
+# analysis parameter (used by run_rolling.py) and does not affect model
+# training.  Running this ablation produced results identical to baseline.
+#
+# To test rolling window sensitivity, use:
+#   python experiments/run_rolling.py --window-sizes 250 500 750 1000
+# =============================================================================
+#
+# This file is intentionally left inactive.
+# Rename to window_sweep.yaml.disabled to exclude from ablation runner.
