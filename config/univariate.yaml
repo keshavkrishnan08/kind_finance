@@ -8,6 +8,13 @@
 defaults:
   - default
 
+model:
+  n_modes: 5
+  hidden_dims: [64, 64, 32]
+
+training:
+  batch_size: 256
+
 data:
   tickers: ['SPY']
   input_dim: 1

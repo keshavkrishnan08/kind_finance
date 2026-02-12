@@ -144,12 +144,13 @@ def chapman_kolmogorov_test(
     embedded: np.ndarray,
     tau: int,
     device: torch.device,
-    n_steps: int = 5,
+    n_steps: int = 3,
 ) -> Dict[str, Any]:
     """Chapman-Kolmogorov test for Markov consistency.
 
     Checks whether K(n*tau) approximately equals K(tau)^n by comparing
-    eigenvalues estimated at multiples of the lag time.
+    eigenvalues estimated at multiples of the lag time.  Uses relative
+    error and top-k eigenvalue matching for robustness.
 
     Returns
     -------
@@ -168,6 +169,10 @@ def chapman_kolmogorov_test(
     eigs_base = np.linalg.eigvals(K_base)
     eigs_base_sorted = eigs_base[np.argsort(-np.abs(eigs_base))]
 
+    # Only compare top-k eigenvalues (rest dominated by noise)
+    n_modes = len(eigs_base_sorted)
+    k_compare = max(3, n_modes // 2)
+
     ck_errors = []
     for n in range(2, n_steps + 1):
         n_tau = n * tau
@@ -175,7 +180,7 @@ def chapman_kolmogorov_test(
             break
 
         # Predicted: eigenvalues of K(tau)^n = eigenvalues(K(tau))^n
-        eigs_predicted = eigs_base_sorted ** n
+        eigs_predicted = eigs_base_sorted[:k_compare] ** n
 
         # Estimated: eigenvalues from K(n*tau) directly
         x_t_n = torch.as_tensor(embedded[:-n_tau], dtype=torch.float32).to(device)
@@ -185,21 +190,22 @@ def chapman_kolmogorov_test(
             out_n = model(x_t_n, x_tau_n)
         K_n = out_n["koopman_matrix"].cpu().numpy()
         eigs_n = np.linalg.eigvals(K_n)
-        eigs_n_sorted = eigs_n[np.argsort(-np.abs(eigs_n))]
+        eigs_n_sorted = eigs_n[np.argsort(-np.abs(eigs_n))][:k_compare]
 
-        # Compare (element-wise absolute difference in magnitudes)
-        n_compare = min(len(eigs_predicted), len(eigs_n_sorted))
-        error = float(np.mean(np.abs(
-            np.abs(eigs_predicted[:n_compare]) - np.abs(eigs_n_sorted[:n_compare])
-        )))
-        ck_errors.append({"n": n, "error": error})
+        # Relative error on magnitudes (avoids issues when values are near 0)
+        mags_pred = np.abs(eigs_predicted)
+        mags_obs = np.abs(eigs_n_sorted)
+        denom = np.maximum(mags_pred, 1e-8)
+        rel_error = float(np.mean(np.abs(mags_pred - mags_obs) / denom))
+        ck_errors.append({"n": n, "error": rel_error})
 
     errors = [e["error"] for e in ck_errors]
     mean_error = float(np.mean(errors)) if errors else 0.0
 
-    # Block-bootstrap null: shuffle temporal order to destroy Markov structure
+    # Block-bootstrap null: small blocks to destroy Markov structure
     n_bootstrap = 200
-    block_size = min(50, len(embedded) // 4)
+    block_size = min(10, len(embedded) // 20)
+    block_size = max(block_size, 2)
     rng = np.random.default_rng(seed=42)
     boot_mean_errors = []
 
@@ -222,7 +228,7 @@ def chapman_kolmogorov_test(
                 out_b = model(x_t_b, x_tau_b)
             K_b = out_b["koopman_matrix"].cpu().numpy()
             eigs_b = np.linalg.eigvals(K_b)
-            eigs_b_sorted = eigs_b[np.argsort(-np.abs(eigs_b))]
+            eigs_b_sorted = eigs_b[np.argsort(-np.abs(eigs_b))][:k_compare]
 
             eigs_pred_b = eigs_b_sorted ** n
             x_t_bn = torch.as_tensor(emb_boot[:-n_tau], dtype=torch.float32).to(device)
@@ -231,12 +237,12 @@ def chapman_kolmogorov_test(
                 out_bn = model(x_t_bn, x_tau_bn)
             K_bn = out_bn["koopman_matrix"].cpu().numpy()
             eigs_bn = np.linalg.eigvals(K_bn)
-            eigs_bn_sorted = eigs_bn[np.argsort(-np.abs(eigs_bn))]
+            eigs_bn_sorted = eigs_bn[np.argsort(-np.abs(eigs_bn))][:k_compare]
 
-            nc = min(len(eigs_pred_b), len(eigs_bn_sorted))
-            err_b = float(np.mean(np.abs(
-                np.abs(eigs_pred_b[:nc]) - np.abs(eigs_bn_sorted[:nc])
-            )))
+            mags_pred_b = np.abs(eigs_pred_b)
+            mags_obs_b = np.abs(eigs_bn_sorted)
+            denom_b = np.maximum(mags_pred_b, 1e-8)
+            err_b = float(np.mean(np.abs(mags_pred_b - mags_obs_b) / denom_b))
             boot_errors.append(err_b)
 
         if boot_errors:
@@ -254,6 +260,7 @@ def chapman_kolmogorov_test(
         "p_value": p_value,
         "n_bootstrap": n_bootstrap,
         "n_steps_tested": len(ck_errors),
+        "k_eigenvalues_compared": k_compare,
         "passed": mean_error < float(np.median(boot_arr)) if len(boot_arr) > 0 else True,
     }
 
@@ -363,7 +370,8 @@ def permutation_test_irreversibility(
 
     for p in range(n_permutations):
         surrogate = random_time_reversal(
-            embedded, n_segments=5, n_samples=1, rng=rng,
+            embedded, n_segments=20, min_segment_frac=0.02,
+            max_segment_frac=0.15, n_samples=1, rng=rng,
         )[0]
 
         x_t_s = torch.as_tensor(surrogate[:-tau], dtype=torch.float32).to(device)

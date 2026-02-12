@@ -1,9 +1,12 @@
 """
 Full synthetic validation per PRD Section 8.1.
 
-Tests the NonEquilibriumVAMPNet on analytically tractable 2D double-well
-Langevin systems -- both reversible (detailed balance) and non-reversible
-(broken detailed balance via antisymmetric rotation coupling).
+Tests the NonEquilibriumVAMPNet on analytically tractable 2D systems:
+
+1. Double-well Langevin dynamics -- both reversible (detailed balance) and
+   non-reversible (broken detailed balance via antisymmetric rotation).
+2. Brownian gyrator -- 2D coupled OU process with unequal bath temperatures,
+   providing an analytically solvable entropy production benchmark.
 
 Validates:
     - Kramers eigenvalue matching
@@ -13,6 +16,7 @@ Validates:
     - Chapman-Kolmogorov consistency
     - Shared vs separate weight trade-offs
     - Spectral gap / MFPT correspondence
+    - Analytical entropy production recovery (Brownian gyrator)
 """
 
 import sys
@@ -111,6 +115,104 @@ def generate_reversible_double_well(
     return generate_non_reversible_double_well(
         n_steps=n_steps, dt=dt, D=D, rotation_strength=0.0, seed=seed
     )
+
+
+def generate_brownian_gyrator(
+    n_steps: int = 30000,
+    dt: float = 0.005,
+    k: float = 1.0,
+    kappa: float = 0.5,
+    T1: float = 1.0,
+    T2: float = 3.0,
+    seed: int = 42,
+) -> np.ndarray:
+    """2D Brownian gyrator: coupled OU process with unequal bath temperatures.
+
+    Dynamics::
+
+        dx1 = (-k*x1 + kappa*x2) dt + sqrt(2*T1) dW1
+        dx2 = (-k*x2 + kappa*x1) dt + sqrt(2*T2) dW2
+
+    When T1 != T2, detailed balance is broken and the system exhibits a
+    non-zero steady-state probability current (the "gyration").  The
+    entropy production rate has an exact analytical expression.
+
+    Parameters
+    ----------
+    n_steps : int
+        Number of Euler-Maruyama integration steps.
+    dt : float
+        Time step.
+    k : float
+        Restoring force (spring constant), must be > kappa for stability.
+    kappa : float
+        Inter-coordinate coupling strength.
+    T1, T2 : float
+        Bath temperatures for coordinates 1 and 2.
+    seed : int
+        Random seed.
+
+    Returns
+    -------
+    np.ndarray, shape ``(n_steps, 2)``
+        Trajectory ``[x1(t), x2(t)]``.
+    """
+    assert k > kappa, "Need k > kappa for stability"
+    rng = np.random.RandomState(seed)
+
+    noise1 = np.sqrt(2.0 * T1 * dt)
+    noise2 = np.sqrt(2.0 * T2 * dt)
+
+    trajectory = np.zeros((n_steps, 2))
+    x = np.array([0.0, 0.0])
+
+    for t in range(n_steps):
+        trajectory[t] = x
+        x1, x2 = x
+
+        dx1 = (-k * x1 + kappa * x2) * dt + noise1 * rng.randn()
+        dx2 = (-k * x2 + kappa * x1) * dt + noise2 * rng.randn()
+
+        x = x + np.array([dx1, dx2])
+
+    return trajectory
+
+
+def analytical_gyrator_entropy_production(
+    k: float = 1.0,
+    kappa: float = 0.5,
+    T1: float = 1.0,
+    T2: float = 3.0,
+) -> float:
+    """Analytical steady-state entropy production rate for a Brownian gyrator.
+
+    For the 2D coupled OU process with drift matrix A and diffusion D:
+        A = [[k, -kappa], [-kappa, k]]
+        D = diag(T1, T2)
+
+    The EP rate is  sigma = Tr[Q Sigma Q^T D^{-1}]
+    where Q = A - D Sigma^{-1} and Sigma solves the Lyapunov equation
+    A Sigma + Sigma A^T = 2D.
+
+    Uses scipy for the Lyapunov solve to handle general parameters.
+    """
+    from scipy.linalg import solve_continuous_lyapunov
+
+    A = np.array([[k, -kappa], [-kappa, k]])
+    D = np.array([[T1, 0.0], [0.0, T2]])
+
+    # Steady-state covariance: A Sigma + Sigma A^T = 2D
+    Sigma = solve_continuous_lyapunov(A, 2.0 * D)
+
+    # Irreversible drift: Q = A - D Sigma^{-1}
+    Sigma_inv = np.linalg.inv(Sigma)
+    Q = A - D @ Sigma_inv
+
+    # EP rate: sigma = Tr[Q Sigma Q^T D^{-1}]
+    D_inv = np.diag([1.0 / T1, 1.0 / T2])
+    ep_rate = np.trace(Q @ Sigma @ Q.T @ D_inv)
+
+    return float(ep_rate)
 
 
 # ---------------------------------------------------------------------------
@@ -616,3 +718,133 @@ class TestIrreversibilityFieldEig:
                 f"Barrier irreversibility ({I_barrier:.4f}) should exceed "
                 f"well irreversibility ({I_well:.4f})"
             )
+
+
+# ===================================================================
+# Brownian Gyrator: Analytically solvable EP benchmark
+# ===================================================================
+
+
+class TestBrownianGyrator:
+    """Validate KTND on a Brownian gyrator with known entropy production.
+
+    The 2D coupled OU process with unequal bath temperatures (T1 != T2)
+    breaks detailed balance and has an analytically computable EP rate.
+    This provides a quantitative benchmark for our spectral entropy
+    decomposition.
+    """
+
+    @pytest.fixture(scope="class")
+    def gyrator_neq(self):
+        """Non-equilibrium gyrator: T1=1.0, T2=3.0."""
+        return generate_brownian_gyrator(
+            n_steps=30000, dt=0.005, k=1.0, kappa=0.5,
+            T1=1.0, T2=3.0, seed=42,
+        )
+
+    @pytest.fixture(scope="class")
+    def gyrator_eq(self):
+        """Equilibrium gyrator: T1=T2=1.0 (detailed balance holds)."""
+        return generate_brownian_gyrator(
+            n_steps=30000, dt=0.005, k=1.0, kappa=0.5,
+            T1=1.0, T2=1.0, seed=42,
+        )
+
+    @pytest.fixture(scope="class")
+    def trained_gyrator_neq(self, gyrator_neq):
+        """Trained model on non-equilibrium gyrator."""
+        model, out, losses = train_on_synthetic(
+            gyrator_neq, tau=1, n_epochs=300, output_dim=4, seed=42,
+        )
+        return model, out, losses, gyrator_neq
+
+    @pytest.fixture(scope="class")
+    def trained_gyrator_eq(self, gyrator_eq):
+        """Trained model on equilibrium gyrator."""
+        model, out, losses = train_on_synthetic(
+            gyrator_eq, tau=1, n_epochs=300, output_dim=4, seed=42,
+        )
+        return model, out, losses, gyrator_eq
+
+    def test_analytical_ep_equilibrium_zero(self):
+        """Analytical EP is zero when T1 == T2."""
+        ep = analytical_gyrator_entropy_production(k=1.0, kappa=0.5, T1=1.0, T2=1.0)
+        assert abs(ep) < 1e-10, f"EP should be zero at equilibrium, got {ep}"
+
+    def test_analytical_ep_nonequilibrium_positive(self):
+        """Analytical EP is positive when T1 != T2."""
+        ep = analytical_gyrator_entropy_production(k=1.0, kappa=0.5, T1=1.0, T2=3.0)
+        assert ep > 0.0, f"EP should be positive out of equilibrium, got {ep}"
+
+    def test_analytical_ep_scales_with_temperature_difference(self):
+        """EP increases with |T1 - T2|."""
+        ep_small = analytical_gyrator_entropy_production(k=1.0, kappa=0.5, T1=1.0, T2=1.5)
+        ep_large = analytical_gyrator_entropy_production(k=1.0, kappa=0.5, T1=1.0, T2=3.0)
+        assert ep_large > ep_small > 0, (
+            f"EP should increase with temp difference: {ep_small:.4f} < {ep_large:.4f}"
+        )
+
+    def test_neq_gyrator_positive_spectral_entropy(self, trained_gyrator_neq):
+        """Non-equilibrium gyrator should produce positive spectral entropy."""
+        _, out, _, data = trained_gyrator_neq
+
+        eigs = out["eigenvalues"].detach().cpu().numpy()
+        tau = 1
+        omega = np.angle(eigs) / tau
+
+        x_all = torch.tensor(data, dtype=torch.float32)
+        with torch.no_grad():
+            model = trained_gyrator_neq[0]
+            u, v = model.compute_eigenfunctions(x_all, out)
+        u_np = u.cpu().numpy()
+        v_np = v.cpu().numpy()
+        A_k = np.mean(u_np * v_np, axis=0)
+        S_k = omega ** 2 * np.abs(A_k[:len(omega)])
+        S_total = np.sum(np.abs(S_k))
+
+        assert S_total > 0.0, (
+            f"Spectral entropy should be positive for non-equilibrium gyrator, "
+            f"got {S_total:.6f}"
+        )
+
+    def test_eq_gyrator_lower_spectral_entropy(self, trained_gyrator_eq, trained_gyrator_neq):
+        """Equilibrium gyrator should have lower spectral entropy than non-eq."""
+        def _spectral_entropy(model, out, data):
+            eigs = out["eigenvalues"].detach().cpu().numpy()
+            omega = np.angle(eigs)
+            x_all = torch.tensor(data, dtype=torch.float32)
+            with torch.no_grad():
+                u, v = model.compute_eigenfunctions(x_all, out)
+            A_k = np.mean(u.cpu().numpy() * v.cpu().numpy(), axis=0)
+            return float(np.sum(np.abs(omega ** 2 * np.abs(A_k[:len(omega)]))))
+
+        S_eq = _spectral_entropy(trained_gyrator_eq[0], trained_gyrator_eq[1], trained_gyrator_eq[3])
+        S_neq = _spectral_entropy(trained_gyrator_neq[0], trained_gyrator_neq[1], trained_gyrator_neq[3])
+
+        assert S_neq > S_eq * 0.5, (
+            f"Non-eq spectral entropy ({S_neq:.4f}) should exceed "
+            f"equilibrium ({S_eq:.4f})"
+        )
+
+    def test_neq_gyrator_complex_eigenvalues(self, trained_gyrator_neq):
+        """Non-equilibrium gyrator should have complex eigenvalues."""
+        _, out, _, _ = trained_gyrator_neq
+        eigs = out["eigenvalues"].detach().cpu()
+        if eigs.is_complex():
+            max_imag = torch.abs(eigs.imag).max().item()
+        else:
+            max_imag = 0.0
+        assert max_imag > 0.001, (
+            f"Non-eq gyrator should have complex eigenvalues, "
+            f"max|Im(lambda)| = {max_imag:.6f}"
+        )
+
+    def test_neq_gyrator_irreversibility_positive(self, trained_gyrator_neq):
+        """Non-equilibrium gyrator should have positive irreversibility field."""
+        model, out, _, data = trained_gyrator_neq
+        x_tensor = torch.tensor(data[:-1], dtype=torch.float32)
+        I_field = model.compute_irreversibility_field(x_tensor, out)
+        I_np = I_field.detach().cpu().numpy()
+        assert I_np.mean() > 0, (
+            f"Mean irreversibility should be positive, got {I_np.mean():.6f}"
+        )

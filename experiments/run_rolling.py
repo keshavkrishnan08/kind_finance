@@ -46,6 +46,7 @@ from src.data.preprocessing import (
 )
 from src.model.vampnet import NonEquilibriumVAMPNet
 from src.model.losses import total_loss
+from src.model.koopman import KoopmanAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +216,10 @@ def rolling_spectral_analysis(
         order = np.argsort(-magnitudes)
         sorted_mag = magnitudes[order]
 
-        # Spectral gap
-        spectral_gap = float(sorted_mag[0] - sorted_mag[1]) if len(sorted_mag) > 1 else 0.0
+        # Spectral gap — continuous-time: |Re(ln λ₂)|/τ
+        spectral_gap = float(
+            KoopmanAnalyzer.compute_spectral_gap(out["eigenvalues"], tau=float(tau))
+        )
 
         # Entropy production (spectral)
         omega = np.angle(eigenvalues[order]) / tau

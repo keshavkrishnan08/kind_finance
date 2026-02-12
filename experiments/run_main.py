@@ -65,6 +65,8 @@ from src.model.entropy import (
     estimate_empirical_entropy_production_with_ci,
     estimate_per_sample_entropy_production,
 )
+from src.analysis.regime import RegimeDetector
+from src.constants import NBER_RECESSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +293,9 @@ def train_one_epoch(
             tau=tau,
             w_vamp2=loss_cfg.get("w_vamp2", 1.0),
             w_orthogonality=loss_cfg.get("beta_orthogonality", 0.01),
-            w_spectral=loss_cfg.get("gamma_regularization", 0.1),
+            w_entropy=loss_cfg.get("alpha_entropy", 0.1),
+            w_spectral=loss_cfg.get("spectral_penalty_weight",
+                       loss_cfg.get("gamma_regularization", 0.1)),
         )
 
         loss.backward()
@@ -328,7 +332,9 @@ def evaluate(
             tau=tau,
             w_vamp2=loss_cfg.get("w_vamp2", 1.0),
             w_orthogonality=loss_cfg.get("beta_orthogonality", 0.01),
-            w_spectral=loss_cfg.get("gamma_regularization", 0.1),
+            w_entropy=loss_cfg.get("alpha_entropy", 0.1),
+            w_spectral=loss_cfg.get("spectral_penalty_weight",
+                       loss_cfg.get("gamma_regularization", 0.1)),
         )
 
         for k, v in loss_dict.items():
@@ -566,6 +572,56 @@ def post_training_analysis(
     neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
     neq_results["ft_log_deviation"] = ft_result["log_deviation"]
 
+    # --- KTND regime detection vs NBER ---
+    # Use dominant eigenfunction sign structure to detect regimes
+    # (Perron-Frobenius / Koopman duality: sign of psi_2 partitions state space)
+    ktnd_regime_results = {}
+    try:
+        # Eigenfunctions are aligned with embedded[:-tau] and embedded[tau:]
+        # Use the full-length eigenfunctions for regime detection
+        efunc_for_regime = u_np  # right eigenfunctions, shape (T, K)
+        regime_dates = dates[:len(efunc_for_regime)] if dates is not None else None
+
+        if regime_dates is not None and len(efunc_for_regime) > 0:
+            regime_labels = RegimeDetector.detect_from_eigenfunctions(
+                efunc_for_regime, n_regimes=2,
+            )
+            nber_comparison = RegimeDetector.compare_with_nber(
+                regime_labels, regime_dates,
+                nber_recessions=NBER_RECESSIONS,
+                train_end=DATE_RANGES["train"][1],
+            )
+            ktnd_regime_results = {
+                "ktnd_nber_accuracy": nber_comparison["accuracy"],
+                "ktnd_nber_precision": nber_comparison["precision"],
+                "ktnd_nber_recall": nber_comparison["recall"],
+                "ktnd_nber_f1": nber_comparison["f1"],
+                "ktnd_naive_accuracy": nber_comparison["naive_accuracy"],
+                "ktnd_recession_label": int(nber_comparison["recession_label"]),
+            }
+
+            # Regime durations
+            durations = RegimeDetector.compute_regime_durations(regime_labels)
+            ktnd_regime_results["ktnd_mean_regime_duration"] = float(np.mean(durations))
+            ktnd_regime_results["ktnd_n_regimes_detected"] = len(set(regime_labels))
+
+            logger.info(
+                "KTND regime detection: acc=%.3f, F1=%.3f (naive=%.3f)",
+                nber_comparison["accuracy"],
+                nber_comparison["f1"],
+                nber_comparison["naive_accuracy"],
+            )
+
+            # Save regime labels
+            regime_df = pd.DataFrame({
+                "date": regime_dates,
+                "regime_label": regime_labels[:len(regime_dates)],
+            })
+            regime_df.to_csv(output_dir / "ktnd_regime_labels.csv", index=False)
+    except Exception as e:
+        logger.warning("KTND regime detection failed: %s", e)
+        ktnd_regime_results = {"ktnd_regime_error": str(e)}
+
     # --- Collect all results ---
     results = {
         "eigenvalues_real": eigenvalues_sorted.real.tolist(),
@@ -583,6 +639,7 @@ def post_training_analysis(
         "relaxation_times": relaxation_times.tolist(),
         "n_modes": len(eigenvalues_sorted),
         **neq_results,
+        **ktnd_regime_results,
     }
 
     # Save irreversibility field
@@ -591,11 +648,16 @@ def post_training_analysis(
     np.save(output_dir / "eigenfunctions_left.npy", v_np)
     np.save(output_dir / "koopman_matrix.npy", koopman_matrix)
 
-    # Save all results as JSON
+    # Save all results as JSON (both generic and mode-specific)
     results_path = output_dir / "analysis_results.json"
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
-    logger.info("Analysis results saved to %s", results_path)
+    # Also save a mode-specific copy so multiasset doesn't overwrite univariate
+    mode = config.get("_mode", "unknown")
+    mode_results_path = output_dir / f"analysis_results_{mode}.json"
+    with open(mode_results_path, "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info("Analysis results saved to %s and %s", results_path, mode_results_path)
 
     return results
 
@@ -716,6 +778,7 @@ def main() -> None:
     logger.info("Model checkpoint saved to %s", ckpt_path)
 
     # ----- Post-training analysis -----
+    config["_mode"] = args.mode  # pass mode for mode-specific result files
     results = post_training_analysis(
         model, embedded, dates, config, device, results_dir,
     )
@@ -747,6 +810,13 @@ def main() -> None:
     print(f"  Test VAMP-2:        {test_metrics.get('vamp2', 'N/A')}")
     print(f"  Test total loss:    {test_metrics.get('total', 'N/A')}")
     print(f"  Leading relaxation: {results['relaxation_times'][0]:.2f} days")
+    # KTND regime detection metrics
+    if "ktnd_nber_accuracy" in results:
+        print(f"  KTND NBER accuracy: {results['ktnd_nber_accuracy']:.3f}")
+        print(f"  KTND NBER F1:       {results['ktnd_nber_f1']:.3f}")
+        print(f"  KTND naive acc:     {results['ktnd_naive_accuracy']:.3f}")
+    elif "ktnd_regime_error" in results:
+        print(f"  KTND regime:        FAILED ({results['ktnd_regime_error']})")
     print(f"  Checkpoint:         {ckpt_path}")
     print(f"  Results dir:        {results_dir}")
     print("=" * 70 + "\n")
