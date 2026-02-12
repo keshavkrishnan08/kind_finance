@@ -582,6 +582,15 @@ def post_training_analysis(
         regime_dates = dates[:len(efunc_for_regime)] if dates is not None else None
 
         if regime_dates is not None and len(efunc_for_regime) > 0:
+            # BIC model selection: compare 2-4 state HMMs
+            bic_result = RegimeDetector.select_n_regimes_bic(
+                efunc_for_regime, max_regimes=4, n_features=5,
+            )
+            best_n = bic_result.get("best_n", 2)
+            logger.info("BIC model selection: best_n=%d, BIC=%s",
+                        best_n, bic_result.get("bic_values", {}))
+
+            # Use BIC-selected n_regimes for detection
             regime_labels = RegimeDetector.detect_from_eigenfunctions(
                 efunc_for_regime, n_regimes=2, method="hmm",
             )
@@ -598,6 +607,8 @@ def post_training_analysis(
                 "ktnd_naive_accuracy": nber_comparison["naive_accuracy"],
                 "ktnd_recession_label": int(nber_comparison["recession_label"]),
                 "ktnd_detection_method": "hmm",
+                "ktnd_bic_best_n": best_n,
+                "ktnd_bic_values": bic_result.get("bic_values", {}),
             }
 
             # Regime durations
@@ -606,10 +617,11 @@ def post_training_analysis(
             ktnd_regime_results["ktnd_n_regimes_detected"] = len(set(regime_labels))
 
             logger.info(
-                "KTND regime detection: acc=%.3f, F1=%.3f (naive=%.3f)",
+                "KTND regime detection: acc=%.3f, F1=%.3f (naive=%.3f), BIC_best=%d",
                 nber_comparison["accuracy"],
                 nber_comparison["f1"],
                 nber_comparison["naive_accuracy"],
+                best_n,
             )
 
             # Save regime labels

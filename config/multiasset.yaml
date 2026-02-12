@@ -8,6 +8,9 @@
 defaults:
   - default
 
+model:
+  n_modes: 15
+
 data:
   tickers:
     - SPY   # S&P 500
