@@ -1292,13 +1292,13 @@ mappings are learned on training data only (pre-2018).}
 Method & \multicolumn{1}{c}{Acc.} & \multicolumn{1}{c}{Prec.} &
   \multicolumn{1}{c}{Rec.} & \multicolumn{1}{c}{F1} \\
 \hline
-KTND (HMM on $\psi_{1\text{--}3}$) & \multicolumn{4}{c}{\textit{(from HMM re-detection run)}} \\
+KTND (HMM on $\psi_{1\text{--}3}$) & 0.67 & 0.07 & 0.09 & 0.08 \\
 HMM ($K\!=\!3$) & 0.88 & 0.04 & 0.02 & 0.03 \\
 DMD ($K\!=\!10$) & 0.83 & 0.16 & 0.28 & 0.21 \\
 PCA + $K$-means & 0.83 & 0.16 & 0.28 & 0.21 \\
 GARCH(1,1) & 0.82 & 0.26 & 0.50 & 0.35 \\
 VIX threshold & 0.90 & 0.35 & 0.38 & 0.37 \\
-Naive (majority) & 0.92 & --- & 0.00 & 0.00 \\
+Naive (majority) & 0.92 & \multicolumn{1}{c}{---} & 0.00 & 0.00 \\
 \end{tabular}
 \end{ruledtabular}
 \end{table}
@@ -1772,7 +1772,7 @@ obtained from the National Bureau of Economic Research public database.
 
 \section*{Code availability}
 The complete implementation, including training code, analysis scripts,
-configuration files, and the full test suite (132 unit tests), is
+configuration files, and the full test suite (140+ unit tests), is
 available at \url{https://github.com/keshavkrishnan08/kind_finance}.
 
 
@@ -1802,10 +1802,10 @@ from 1994 to 2025.}
 \begin{figure}
 \includegraphics[width=\columnwidth]{supplemental/figS4_cross_correlation}
 \caption{\label{fig:cross_correlation}Cross-correlation function between
-the spectral gap and VIX index as a function of lag (days).  The minimum
-correlation ($r = -0.29$) occurs at lag $= -8$ days, indicating that
-spectral gap changes lead VIX movements.  Negative lags correspond to
-the spectral gap leading.}
+the spectral gap and VIX index as a function of lag (days).  The optimal
+correlation is $r = -0.30$ at lag 13 days.  Formal Granger causality
+testing does not reach significance, indicating a concurrent association
+rather than a predictive lead-lag relationship.}
 \end{figure}
 
 \begin{figure}
