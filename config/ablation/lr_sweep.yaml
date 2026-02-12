@@ -1,0 +1,10 @@
+# Learning rate sensitivity sweep.
+# Tests sensitivity of VAMP-2 and spectral quantities to the Adam
+# learning rate.  Standard hyperparameter ablation expected by PRE.
+
+defaults:
+  - default
+
+sweep:
+  parameter: training.learning_rate
+  values: [0.0003, 0.001, 0.003]

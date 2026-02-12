@@ -790,6 +790,17 @@ def main() -> None:
     for k, v in test_metrics.items():
         exp_logger.log_result(f"test_{k}", v)
 
+    # Add VAMP-2 score to results JSON (needed for multi-seed aggregation)
+    results["vamp2_score"] = test_metrics.get("vamp2", None)
+    results["test_total_loss"] = test_metrics.get("total", None)
+    # Re-save results with VAMP-2 included
+    results_path = results_dir / "analysis_results.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    mode_results_path = results_dir / f"analysis_results_{args.mode}.json"
+    with open(mode_results_path, "w") as f:
+        json.dump(results, f, indent=2, default=str)
+
     # ----- Print summary -----
     print("\n" + "=" * 70)
     print("KTND-Finance: Main Experiment Summary")
