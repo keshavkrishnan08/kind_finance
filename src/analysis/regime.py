@@ -101,7 +101,7 @@ class RegimeDetector:
     def _detect_hmm(
         eigenfunctions: np.ndarray,
         n_regimes: int = 2,
-        n_features: int = 3,
+        n_features: int = 5,
     ) -> Optional[np.ndarray]:
         """Fit a Gaussian HMM on the top eigenfunctions.
 
@@ -167,6 +167,87 @@ class RegimeDetector:
         except Exception as e:
             logger.warning("HMM fitting failed: %s", e)
             return None
+
+    @staticmethod
+    def select_n_regimes_bic(
+        eigenfunctions: np.ndarray,
+        max_regimes: int = 4,
+        n_features: int = 5,
+    ) -> Dict[str, Any]:
+        """Select optimal number of regimes via BIC model comparison.
+
+        Fits Gaussian HMMs with 2, 3, ..., max_regimes states and selects
+        the model with the lowest BIC.  Returns full BIC comparison table
+        for reporting.
+
+        Parameters
+        ----------
+        eigenfunctions : np.ndarray
+            Shape ``(T, K)``.
+        max_regimes : int
+            Maximum number of hidden states to test.
+        n_features : int
+            Number of top non-trivial eigenfunctions to use.
+
+        Returns
+        -------
+        dict
+            ``best_n``, ``bic_values``, ``log_likelihoods``, ``converged``.
+        """
+        try:
+            from hmmlearn.hmm import GaussianHMM
+        except ImportError:
+            logger.warning("hmmlearn not available for BIC selection")
+            return {"best_n": 2, "error": "hmmlearn not installed"}
+
+        T, K = eigenfunctions.shape
+        start_col = 1 if K > 1 else 0
+        n_use = min(n_features, K - start_col)
+        if n_use < 1:
+            return {"best_n": 2, "error": "insufficient eigenfunctions"}
+
+        features = eigenfunctions[:, start_col : start_col + n_use].copy()
+        scaler = StandardScaler()
+        features = scaler.fit_transform(features)
+        if not np.all(np.isfinite(features)):
+            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+        bic_values = {}
+        log_liks = {}
+        converged = {}
+
+        for n in range(2, max_regimes + 1):
+            try:
+                hmm = GaussianHMM(
+                    n_components=n,
+                    covariance_type="full",
+                    n_iter=200,
+                    random_state=42,
+                    tol=1e-4,
+                )
+                hmm.fit(features)
+                ll = hmm.score(features) * T  # total log-likelihood
+                n_params = n * n + n * n_use + n * n_use * (n_use + 1) // 2 - 1
+                bic = -2 * ll + n_params * np.log(T)
+                bic_values[n] = float(bic)
+                log_liks[n] = float(ll)
+                converged[n] = bool(hmm.monitor_.converged)
+                logger.info("BIC(n=%d) = %.1f, LL = %.1f, converged=%s",
+                            n, bic, ll, converged[n])
+            except Exception as e:
+                logger.warning("HMM fitting failed for n=%d: %s", n, e)
+                bic_values[n] = float("inf")
+                log_liks[n] = float("-inf")
+                converged[n] = False
+
+        best_n = min(bic_values, key=bic_values.get)
+
+        return {
+            "best_n": best_n,
+            "bic_values": bic_values,
+            "log_likelihoods": log_liks,
+            "converged": converged,
+        }
 
     # ------------------------------------------------------------------
     # Duration statistics

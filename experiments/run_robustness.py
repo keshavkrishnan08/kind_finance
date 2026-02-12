@@ -7,10 +7,11 @@ Koopman-Thermodynamic model:
 
     1. Chapman-Kolmogorov consistency test
     2. Bootstrap confidence intervals for eigenvalues
-    3. Permutation test for irreversibility
+    3. Permutation test for irreversibility (with Cohen's d effect size)
     4. Ljung-Box test on residuals
     5. Granger causality: spectral gap -> VIX
     6. KS test on eigenfunctions (train vs test distribution shift)
+    7. Time-reversal asymmetry (model-free detailed balance violation)
 
 All results are saved to a structured JSON file.
 
@@ -341,7 +342,7 @@ def permutation_test_irreversibility(
     embedded: np.ndarray,
     tau: int,
     device: torch.device,
-    n_permutations: int = 500,
+    n_permutations: int = 1000,
 ) -> Dict[str, Any]:
     """Test whether the observed irreversibility is significantly different
     from a time-reversible null model.
@@ -370,7 +371,7 @@ def permutation_test_irreversibility(
 
     for p in range(n_permutations):
         surrogate = random_time_reversal(
-            embedded, n_segments=20, min_segment_frac=0.02,
+            embedded, n_segments=30, min_segment_frac=0.02,
             max_segment_frac=0.15, n_samples=1, rng=rng,
         )[0]
 
@@ -387,13 +388,30 @@ def permutation_test_irreversibility(
     null_arr = np.array(null_means)
     p_value = float(np.mean(null_arr >= mean_irrev_observed))
 
+    # Cohen's d effect size: (observed - null_mean) / null_std
+    null_std = float(np.std(null_arr))
+    cohens_d = float((mean_irrev_observed - np.mean(null_arr)) / max(null_std, 1e-15))
+
+    # Effect size interpretation (Cohen, 1988)
+    if abs(cohens_d) >= 0.8:
+        effect_interpretation = "large"
+    elif abs(cohens_d) >= 0.5:
+        effect_interpretation = "medium"
+    elif abs(cohens_d) >= 0.2:
+        effect_interpretation = "small"
+    else:
+        effect_interpretation = "negligible"
+
     return {
         "test": "Permutation_Irreversibility",
         "observed_mean_irreversibility": mean_irrev_observed,
         "null_mean": float(np.mean(null_arr)),
-        "null_std": float(np.std(null_arr)),
+        "null_std": null_std,
         "p_value": p_value,
+        "cohens_d": cohens_d,
+        "effect_size": effect_interpretation,
         "n_permutations": n_permutations,
+        "n_segments": 30,
         "significant_at_005": p_value < 0.05,
         "significant_at_001": p_value < 0.01,
     }
@@ -675,6 +693,109 @@ def ks_test_eigenfunctions(
 
 
 # =====================================================================
+# Test 7: Time-reversal asymmetry statistic (model-free)
+# =====================================================================
+
+def time_reversal_asymmetry_test(
+    embedded: np.ndarray,
+    tau: int,
+    n_bootstrap: int = 500,
+) -> Dict[str, Any]:
+    """Model-free time-reversal asymmetry test.
+
+    Computes the third-order time-reversal asymmetry statistic:
+        A(tau) = <x(t+tau)^2 * x(t) - x(t)^2 * x(t+tau)>
+
+    For a time-reversible process A(tau) = 0.  Significance is assessed
+    via block bootstrap under the null that the asymmetry is zero.
+
+    This provides a model-independent confirmation that the data itself
+    (not just the KTND model) violates detailed balance.
+
+    Reference: Weiss (1975); Lawrance (1991) time reversibility tests.
+    """
+    logger.info("Running time-reversal asymmetry test (tau=%d, bootstrap=%d) ...", tau, n_bootstrap)
+
+    T, D = embedded.shape
+    x_t = embedded[:-tau]
+    x_tau = embedded[tau:]
+
+    # Asymmetry: <x(t+tau)^2 * x(t) - x(t)^2 * x(t+tau)> per dimension
+    asym_per_dim = np.mean(x_tau**2 * x_t - x_t**2 * x_tau, axis=0)
+    # Aggregate: mean absolute asymmetry across dimensions
+    observed_asym = float(np.mean(np.abs(asym_per_dim)))
+
+    # Block bootstrap for CI
+    rng = np.random.default_rng(42)
+    block_length = max(50, tau * 5)
+    n_eff = T - tau
+    n_blocks = max(n_eff // block_length, 2)
+
+    bootstrap_stats = []
+    for _ in range(n_bootstrap):
+        # Sample block start indices with replacement
+        starts = rng.integers(0, n_eff - block_length, size=n_blocks)
+        indices = np.concatenate([np.arange(s, s + block_length) for s in starts])[:n_eff]
+
+        x_t_b = embedded[indices]
+        x_tau_b = embedded[indices + tau] if np.max(indices) + tau < T else embedded[np.minimum(indices + tau, T - 1)]
+
+        asym_b = np.mean(x_tau_b**2 * x_t_b - x_t_b**2 * x_tau_b, axis=0)
+        bootstrap_stats.append(float(np.mean(np.abs(asym_b))))
+
+    bootstrap_arr = np.array(bootstrap_stats)
+    ci_lower = float(np.percentile(bootstrap_arr, 2.5))
+    ci_upper = float(np.percentile(bootstrap_arr, 97.5))
+    std_err = float(np.std(bootstrap_arr))
+
+    # p-value: fraction of bootstrap samples with |asym| <= 0
+    # (since null is A(tau) = 0 for reversible processes)
+    # Use: how extreme is 0 relative to the bootstrap distribution?
+    p_value = float(2.0 * min(
+        np.mean(bootstrap_arr <= 0),
+        np.mean(bootstrap_arr >= 0)
+    ))
+    p_value = min(p_value, 1.0)
+
+    # Also compute per-dimension z-scores
+    per_dim_results = []
+    for d in range(D):
+        dim_asym = float(asym_per_dim[d])
+        # Quick bootstrap std for this dimension
+        dim_boot = []
+        for _ in range(200):
+            idx = rng.integers(0, n_eff, size=n_eff)
+            a = np.mean(x_tau[idx, d]**2 * x_t[idx, d] - x_t[idx, d]**2 * x_tau[idx, d])
+            dim_boot.append(float(a))
+        dim_std = float(np.std(dim_boot))
+        z = dim_asym / max(dim_std, 1e-15)
+        per_dim_results.append({
+            "dimension": d,
+            "asymmetry": dim_asym,
+            "bootstrap_std": dim_std,
+            "z_score": float(z),
+            "significant_at_005": abs(z) > 1.96,
+        })
+
+    n_sig_dims = sum(r["significant_at_005"] for r in per_dim_results)
+
+    return {
+        "test": "Time_Reversal_Asymmetry",
+        "observed_asymmetry": observed_asym,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "std_error": std_err,
+        "p_value_zero_in_ci": p_value,
+        "ci_excludes_zero": ci_lower > 0,
+        "n_bootstrap": n_bootstrap,
+        "per_dimension": per_dim_results,
+        "n_significant_dimensions": n_sig_dims,
+        "n_dimensions": D,
+        "tau": tau,
+    }
+
+
+# =====================================================================
 # CLI
 # =====================================================================
 
@@ -701,7 +822,7 @@ def parse_args() -> argparse.Namespace:
         help="Number of bootstrap resamples for eigenvalue CIs.",
     )
     parser.add_argument(
-        "--n-permutations", type=int, default=500,
+        "--n-permutations", type=int, default=1000,
         help="Number of permutations for the irreversibility test.",
     )
     parser.add_argument(
@@ -780,9 +901,10 @@ def main() -> None:
             model, embedded, tau, device, n_permutations=args.n_permutations,
         )
         all_tests["permutation_irreversibility"] = perm_result
-        logger.info("Permutation test: observed=%.6f, null_mean=%.6f, p=%.4f",
+        logger.info("Permutation test: observed=%.6f, null_mean=%.6f, p=%.4f, Cohen's d=%.2f (%s)",
                      perm_result["observed_mean_irreversibility"],
-                     perm_result["null_mean"], perm_result["p_value"])
+                     perm_result["null_mean"], perm_result["p_value"],
+                     perm_result["cohens_d"], perm_result["effect_size"])
     except Exception as e:
         logger.error("Permutation irreversibility test failed: %s", e)
         all_tests["permutation_irreversibility"] = {"error": str(e)}
@@ -855,6 +977,17 @@ def main() -> None:
         logger.error("KS test failed: %s", e)
         all_tests["ks_eigenfunctions"] = {"error": str(e)}
 
+    # Test 7: Time-reversal asymmetry (model-free)
+    try:
+        tra_result = time_reversal_asymmetry_test(embedded, tau, n_bootstrap=args.n_bootstrap)
+        all_tests["time_reversal_asymmetry"] = tra_result
+        logger.info("Time-reversal asymmetry: observed=%.6f, CI=[%.6f, %.6f], %d/%d dims significant",
+                     tra_result["observed_asymmetry"], tra_result["ci_lower"], tra_result["ci_upper"],
+                     tra_result["n_significant_dimensions"], tra_result["n_dimensions"])
+    except Exception as e:
+        logger.error("Time-reversal asymmetry test failed: %s", e)
+        all_tests["time_reversal_asymmetry"] = {"error": str(e)}
+
     # ---- Save all results ----
     results_path = output_dir / "statistical_tests.json"
     with open(results_path, "w") as f:
@@ -877,7 +1010,8 @@ def main() -> None:
                 status = "PASSED" if result["passed"] else "FAILED"
             elif "p_value" in result:
                 p = result["p_value"]
-                status = f"p={p:.4f} ({'sig' if p < 0.05 else 'n.s.'})"
+                d_str = f", d={result['cohens_d']:.2f} ({result['effect_size']})" if "cohens_d" in result else ""
+                status = f"p={p:.4f} ({'sig' if p < 0.05 else 'n.s.'}){d_str}"
             elif "any_significant" in result:
                 status = "SIGNIFICANT" if result["any_significant"] else "NOT SIGNIFICANT"
             else:

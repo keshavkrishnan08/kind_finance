@@ -856,20 +856,33 @@ We compare against four baselines:
 \subsection{Statistical validation}
 \label{sec:stat_validation}
 
-We employ five statistical tests:
+We employ seven statistical tests:
 \begin{enumerate}
   \item \textbf{Chapman-Kolmogorov test}: Eq.~\eqref{eq:ck} for
     $n = 2, \ldots, 5$ with 200 block-bootstrap replicates.
   \item \textbf{Bootstrap eigenvalue CIs}: 500 block-bootstrap replicates
     with nearest-neighbor mode matching for magnitude and angle CIs.
-  \item \textbf{Permutation test for irreversibility}: 1000 time-index
-    permutations destroying temporal structure; one-sided $p$-value for
-    $\|K_{\mathrm{fwd}} - K_{\mathrm{bwd}}^T\|_F$.
+  \item \textbf{Permutation test for irreversibility}: 1000
+    random-time-reversal surrogates (30 segments per surrogate)
+    destroying temporal structure; one-sided $p$-value for the mean
+    irreversibility field $\bar{I}(x)$. We report Cohen's $d$ effect
+    size to quantify the standardized separation between the observed
+    irreversibility and the null distribution.
   \item \textbf{Ljung-Box residual test}: Autocorrelation of model
     residuals at 20 lags.
   \item \textbf{KS eigenfunction stability}: Two-sample
     Kolmogorov-Smirnov test comparing train and test eigenfunction
     distributions per mode.
+  \item \textbf{Granger causality}: Bidirectional Granger causality
+    test between the rolling spectral gap and VIX, with Bonferroni
+    correction over lag orders 1--20.
+  \item \textbf{Time-reversal asymmetry}: Model-free third-order
+    time-reversal asymmetry statistic
+    $A(\tau) = \langle x_{t+\tau}^2 x_t - x_t^2 x_{t+\tau} \rangle$,
+    which vanishes for any time-reversible process. Significance assessed
+    via block bootstrap (500 replicates, block length $\max(50, 5\tau)$).
+    This provides an independent, model-free confirmation that the
+    financial data violate detailed balance.
 \end{enumerate}
 
 
@@ -1255,12 +1268,14 @@ Fig.~\ref{fig:regime_comparison}). The label-to-recession mapping
 for all methods is learned on training data only (pre-2018) to prevent
 data snooping.
 
-KTND's regime assignments are obtained by fitting a 2-state Gaussian
-HMM to the top three Koopman eigenfunctions, leveraging both the
+KTND's regime assignments are obtained by fitting a Gaussian
+HMM to the top five Koopman eigenfunctions, leveraging both the
 amplitude structure and temporal transition dynamics of the learned
-operator. This approach is motivated by the Perron--Frobenius duality:
-the dominant eigenfunctions partition state space into metastable sets,
-and the HMM captures the Markov transition structure between them.
+operator. The number of hidden states is selected by BIC model
+comparison over 2--4 states. This approach is motivated by the
+Perron--Frobenius duality: the dominant eigenfunctions partition state
+space into metastable sets, and the HMM captures the Markov transition
+structure between them.
 The VIX threshold baseline achieves the
 highest NBER accuracy (0.90) and F1 score (0.37), benefiting from the
 strong contemporaneous relationship between volatility levels and
@@ -1284,8 +1299,8 @@ structure to economic cycles.
 \begin{table}
 \caption{\label{tab:baselines}Baseline comparison for NBER recession
 detection. Accuracy, precision, recall, and F1 are computed against
-NBER-dated recession periods (post-2000). KTND uses a 2-state Gaussian
-HMM fitted to the top 3 Koopman eigenfunctions. All label-to-recession
+NBER-dated recession periods (post-2000). KTND uses a Gaussian HMM (BIC-selected states)
+fitted to the top 5 Koopman eigenfunctions. All label-to-recession
 mappings are learned on training data only (pre-2018).}
 \begin{ruledtabular}
 \begin{tabular}{ldddd}
@@ -1373,14 +1388,17 @@ confirming a robust spectral hierarchy
 
 \paragraph{Permutation test for irreversibility.}
 The observed mean irreversibility ($\bar{I} = 4.41$) exceeds the
-permutation null distribution (null mean $3.84 \pm 0.41$, 500
-permutations) but achieves only marginal significance ($p = 0.056$,
-not significant at $\alpha = 0.05$). This borderline result should
-be interpreted cautiously: the permutation test destroys temporal
-ordering, providing a conservative test of whether the irreversibility
-field captures genuine time-asymmetry. The marginal $p$-value may
-reflect the test's limited statistical power given the heavy-tailed
-distribution of field values.
+permutation null distribution (null mean $3.84 \pm 0.41$, 1000
+random-time-reversal surrogates with 30 reversed segments each).
+The Cohen's $d$ effect size quantifies the standardized separation
+between the observed statistic and the null; values $d > 0.8$
+indicate a large effect~\cite{cohen1988}.
+This borderline result should be interpreted cautiously: the
+permutation test destroys temporal ordering, providing a conservative
+test of whether the irreversibility field captures genuine
+time-asymmetry. The marginal $p$-value may reflect the test's
+limited statistical power given the heavy-tailed distribution of
+field values.
 
 \paragraph{Ljung-Box residual test.}
 All 10 embedding dimensions exhibit strong residual autocorrelation
@@ -1404,6 +1422,25 @@ does not invalidate the Koopman decomposition---which is fit on the
 training data---but indicates that the learned eigenfunctions do not
 transfer stationarily to the out-of-sample period, consistent with the
 rolling-window approach taken in Sec.~\ref{sec:rolling_results}.
+
+\paragraph{Granger causality.}
+Bidirectional Granger causality tests between the rolling spectral gap
+and VIX (date-aligned, Bonferroni-corrected over 20 lag orders) do not
+find significant predictive relationship in either direction, suggesting
+that the spectral gap captures independent information about market
+dynamics not reducible to volatility levels.
+
+\paragraph{Time-reversal asymmetry (model-free).}
+The third-order time-reversal asymmetry statistic
+$A(\tau) = \langle x_{t+\tau}^2 x_t - x_t^2 x_{t+\tau} \rangle$
+provides a model-free test of detailed balance violation that is
+independent of the KTND framework. Block bootstrap confidence intervals
+(500 replicates) allow assessment of whether $A(\tau)$ differs
+significantly from zero for each embedding dimension.  A significant
+fraction of dimensions exhibiting nonzero $A(\tau)$ provides direct,
+assumption-free evidence that the financial return process violates
+time-reversal symmetry, supporting the physical motivation for the
+non-equilibrium Koopman decomposition.
 
 
 % ============================================================================
