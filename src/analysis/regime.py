@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class RegimeDetector:
         eigenfunctions: np.ndarray,
         n_regimes: Optional[int] = None,
         spectral_gap_threshold: float = 0.10,
+        method: str = "hmm",
     ) -> np.ndarray:
         """Assign regime labels using the dominant eigenfunction(s).
 
@@ -50,11 +52,14 @@ class RegimeDetector:
             mode).
         n_regimes : int or None
             Number of regimes.  If ``None`` the method infers the number from
-            the eigenvalue spectrum via the spectral gap heuristic: it finds
-            the largest gap between consecutive singular value magnitudes and
-            sets ``n_regimes`` to the index *before* the gap (minimum 2).
+            the eigenvalue spectrum via the spectral gap heuristic.
         spectral_gap_threshold : float
             Minimum absolute gap required when auto-detecting ``n_regimes``.
+        method : str
+            Detection method: ``"hmm"`` (default) fits a Gaussian HMM on the
+            top eigenfunctions to capture temporal transition structure;
+            ``"sign"`` uses the sign of the dominant eigenfunction (fast but
+            crude); ``"kmeans"`` clusters eigenfunctions without temporal info.
 
         Returns
         -------
@@ -70,19 +75,98 @@ class RegimeDetector:
             )
             logger.info("Auto-detected n_regimes=%d from spectral gap", n_regimes)
 
-        if n_regimes == 2:
-            # Fast path: sign of the first non-trivial eigenfunction
+        if method == "hmm":
+            labels = RegimeDetector._detect_hmm(
+                eigenfunctions, n_regimes=n_regimes
+            )
+            if labels is not None:
+                return labels
+            logger.warning("HMM detection failed, falling back to kmeans")
+            method = "kmeans"
+
+        if method == "sign" and n_regimes == 2:
             psi = eigenfunctions[:, 1] if K > 1 else eigenfunctions[:, 0]
             labels = (psi >= 0).astype(int)
         else:
-            # General path: K-means on the first (n_regimes - 1) non-trivial
-            # eigenfunctions.
+            # K-means on the first (n_regimes - 1) non-trivial eigenfunctions
             n_features = min(n_regimes - 1, K - 1) if K > 1 else K
+            n_features = max(n_features, 1)
             features = eigenfunctions[:, 1 : 1 + n_features] if K > 1 else eigenfunctions[:, :n_features]
             km = KMeans(n_clusters=n_regimes, n_init=20, random_state=42)
             labels = km.fit_predict(features)
 
         return labels
+
+    @staticmethod
+    def _detect_hmm(
+        eigenfunctions: np.ndarray,
+        n_regimes: int = 2,
+        n_features: int = 3,
+    ) -> Optional[np.ndarray]:
+        """Fit a Gaussian HMM on the top eigenfunctions.
+
+        Uses multiple eigenfunctions as observation features and leverages
+        temporal transition structure to identify regimes.  This is more
+        principled than sign-thresholding a single eigenfunction because
+        it uses amplitude information, multiple eigenfunctions, and the
+        Markov transition structure.
+
+        Parameters
+        ----------
+        eigenfunctions : np.ndarray
+            Shape ``(T, K)``.
+        n_regimes : int
+            Number of hidden states.
+        n_features : int
+            Number of top non-trivial eigenfunctions to use as observations.
+
+        Returns
+        -------
+        np.ndarray or None
+            Labels if successful, ``None`` if HMM fitting fails.
+        """
+        try:
+            from hmmlearn.hmm import GaussianHMM
+        except ImportError:
+            logger.warning("hmmlearn not available for HMM regime detection")
+            return None
+
+        T, K = eigenfunctions.shape
+        # Use top non-trivial eigenfunctions (skip column 0 if K > 1)
+        start_col = 1 if K > 1 else 0
+        n_use = min(n_features, K - start_col)
+        if n_use < 1:
+            return None
+
+        features = eigenfunctions[:, start_col : start_col + n_use].copy()
+
+        # Standardize for HMM numerical stability
+        scaler = StandardScaler()
+        features = scaler.fit_transform(features)
+
+        # Handle NaN/Inf
+        if not np.all(np.isfinite(features)):
+            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+        try:
+            hmm = GaussianHMM(
+                n_components=n_regimes,
+                covariance_type="full",
+                n_iter=200,
+                random_state=42,
+                tol=1e-4,
+            )
+            hmm.fit(features)
+            labels = hmm.predict(features)
+            logger.info(
+                "HMM regime detection: %d states, %d features, "
+                "converged=%s, score=%.1f",
+                n_regimes, n_use, hmm.monitor_.converged, hmm.score(features),
+            )
+            return labels
+        except Exception as e:
+            logger.warning("HMM fitting failed: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Duration statistics

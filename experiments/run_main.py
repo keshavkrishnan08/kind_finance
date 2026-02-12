@@ -573,18 +573,17 @@ def post_training_analysis(
     neq_results["ft_log_deviation"] = ft_result["log_deviation"]
 
     # --- KTND regime detection vs NBER ---
-    # Use dominant eigenfunction sign structure to detect regimes
-    # (Perron-Frobenius / Koopman duality: sign of psi_2 partitions state space)
+    # Use Gaussian HMM on top eigenfunctions to detect regimes.
+    # HMM captures temporal transition structure and uses multiple
+    # eigenfunctions (amplitude + transitions), unlike sign-thresholding.
     ktnd_regime_results = {}
     try:
-        # Eigenfunctions are aligned with embedded[:-tau] and embedded[tau:]
-        # Use the full-length eigenfunctions for regime detection
         efunc_for_regime = u_np  # right eigenfunctions, shape (T, K)
         regime_dates = dates[:len(efunc_for_regime)] if dates is not None else None
 
         if regime_dates is not None and len(efunc_for_regime) > 0:
             regime_labels = RegimeDetector.detect_from_eigenfunctions(
-                efunc_for_regime, n_regimes=2,
+                efunc_for_regime, n_regimes=2, method="hmm",
             )
             nber_comparison = RegimeDetector.compare_with_nber(
                 regime_labels, regime_dates,
@@ -598,6 +597,7 @@ def post_training_analysis(
                 "ktnd_nber_f1": nber_comparison["f1"],
                 "ktnd_naive_accuracy": nber_comparison["naive_accuracy"],
                 "ktnd_recession_label": int(nber_comparison["recession_label"]),
+                "ktnd_detection_method": "hmm",
             }
 
             # Regime durations
