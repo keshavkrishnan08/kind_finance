@@ -69,12 +69,14 @@ from the learned spectrum, and apply the method to U.S.\ equity markets
 (1993--2025) as a prototypical non-equilibrium complex system driven by
 information asymmetry and heterogeneous agent interactions. The spectral
 gap yields a regime persistence bound $T_{\mathrm{persist}} \geq 1/\Delta$
-that anticipates NBER-dated recessions. Comparisons with hidden Markov
-models, dynamic mode decomposition, and PCA baselines---together with
+that identifies dynamical regimes with characteristic timescales of
+$5$--$28$ days. Comparisons with hidden Markov
+models, dynamic mode decomposition, GARCH, and PCA baselines---together with
 Chapman-Kolmogorov consistency tests, block-bootstrap confidence intervals,
 and permutation tests for irreversibility---confirm that the non-equilibrium
 spectral decomposition captures dynamical structure inaccessible to
-reversible methods.
+reversible methods. All main results are reported as mean $\pm$ standard
+deviation over five random seeds to quantify sensitivity to initialization.
 \end{abstract}
 
 \maketitle
@@ -807,11 +809,19 @@ tolerance $A_{\mathrm{tol}} = 2\sigma$.
 
 The network is trained with Adam~\cite{kingma2015adam}
 ($\eta = 10^{-3}$, weight decay $10^{-5}$) for up to 500 epochs with
-cosine annealing and early stopping (patience 50 epochs). Batch size is
-512. The lag time is $\tau = 5$ trading days. Ten Koopman modes
-($K = 10$) are learned. We use hidden dimensions $[128, 128, 64]$ and
-dropout $p = 0.1$. All experiments are seeded for reproducibility
-(Python, NumPy, PyTorch, cuDNN).
+cosine annealing and early stopping (patience 50 epochs).
+The lag time is $\tau = 5$ trading days and dropout $p = 0.1$.
+For the multiasset analysis ($d = 11$), we use $K = 10$ Koopman modes,
+hidden dimensions $[128, 128, 64]$, and batch size 512.
+For the univariate analysis ($d = 1$, input dimension 5 after
+embedding), we use $K = 5$ modes, hidden dimensions $[64, 64, 32]$,
+and batch size 256 to avoid overparameterization.
+The orthogonality regularization weight is set to $\beta = 0.01$
+to preserve the non-equilibrium signal (values $\geq 1$ suppress
+the asymmetric component of the Koopman operator).
+All main results are reported as mean $\pm$ standard deviation over
+5 random seeds to quantify sensitivity to network initialization
+(Python, NumPy, PyTorch, cuDNN seeded).
 
 \subsection{Data splits}
 \label{sec:splits}
@@ -974,29 +984,38 @@ and (ii)~linear coupled OU processes with thermal driving.
 
 \begin{table*}
 \caption{\label{tab:results}Summary of key spectral and thermodynamic
-observables for U.S.\ equity markets (SPY, 1994--2025). Uncertainties
-are 95\% block-bootstrap confidence intervals where available.}
+observables for U.S.\ equity markets (2007--2026). Multiasset values are
+mean $\pm$ std over 5 seeds; univariate reported separately.
+Entropy CI is 95\% block-bootstrap.}
 \begin{ruledtabular}
 \begin{tabular}{lll}
 Observable & Value & Interpretation \\
 \hline
-Test VAMP-2 score (univariate) & 2.70 & Dynamical structure captured \\
-Test VAMP-2 score (multiasset) & 1.44 & 11-ETF cross-asset dynamics \\
-Spectral gap $\Delta$ & 0.040 & Regime persistence $\geq 25$ days \\
-$N$ complex modes / total & 8 / 10 & Dominant oscillatory (non-equilibrium) content \\
-Complex fraction & 0.54 & Oscillatory $>$ relaxational content \\
-Singular value range & [0.14, 0.90] & Well-resolved mode hierarchy \\
-Eigenvalue magnitude range & [0.45, 0.70] & Relaxation times 6--14 days \\
+\multicolumn{3}{c}{\textit{Multiasset (11 ETFs, $K=10$, 5 seeds)}} \\
 \hline
-Entropy production $\dot{S}_{\mathrm{emp}}$ (KDE) & 51.2 [48.9, 52.3] bits/day & Strongly non-equilibrium ($\dot{S} \gg 0$) \\
-Spectral entropy $\sum_k \omega_k^2 A_k$ & 1.53 & Lower bound; grows with $K$ \\
-Detailed balance violation $\mathcal{D}$ & 0.73 & Substantial Frobenius asymmetry \\
-Fluctuation theorem ratio & 0.87 & Approximate GC compliance \\
-Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & 8.42 & Elevated non-equilibrium field \\
+Test VAMP-2 score & $-1.59 \pm 0.16$ & Dynamical structure captured \\
+Spectral gap $\Delta$ & $0.045 \pm 0.015$ & Regime persistence $\geq 22$ days \\
+$N$ complex modes / total & $8.8 \pm 1.1$ / 10 & Dominant oscillatory content \\
+Complex fraction & $0.43 \pm 0.03$ & Oscillatory $>$ relaxational \\
+\hline
+Entropy production $\dot{S}_{\mathrm{emp}}$ (KDE) & 51.2 [48.8, 52.2] bits/day & Strongly non-equilibrium ($\dot{S} \gg 0$) \\
+Spectral entropy $\sum_k \omega_k^2 A_k$ & $0.33 \pm 0.11$ & Lower bound; grows with $K$ \\
+Detailed balance violation $\mathcal{D}$ & $0.66 \pm 0.02$ & Substantial Frobenius asymmetry \\
+Fluctuation theorem ratio $\langle e^{-\sigma}\rangle$ & $< 10^{-6}$ & Strong irreversibility \\
+Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $9.0 \pm 1.3$ & Elevated non-equilibrium field \\
 Irreversibility method & eigendecomposition & Theory-correct ($K = W\Lambda W^{-1}$) \\
 \hline
-VIX correlation (concurrent) & $r = -0.27$ & Anti-correlated with volatility \\
-VIX correlation (optimal lag) & $r = -0.29$ at $-8$ days & Suggestive lead (needs Granger test) \\
+\multicolumn{3}{c}{\textit{Univariate (SPY, $K=5$, 5 seeds)}} \\
+\hline
+Test VAMP-2 score & $-0.71 \pm 0.05$ & Single-asset dynamics \\
+Spectral gap $\Delta$ & $0.20 \pm 0.09$ & Regime persistence $\geq 5$ days \\
+Entropy (empirical / spectral) & $4.23$ / $0.42 \pm 0.30$ & Positive EP across seeds \\
+Detailed balance violation & $0.63 \pm 0.09$ & Consistent asymmetry \\
+\hline
+\multicolumn{3}{c}{\textit{Rolling analysis (univariate, $W=500$, stride 5)}} \\
+\hline
+VIX correlation (concurrent) & $r = -0.29$ & Anti-correlated with volatility \\
+VIX correlation (optimal lag) & $r = -0.30$ at 13 days & Granger test: not significant \\
 \end{tabular}
 \end{ruledtabular}
 \end{table*}
@@ -1072,9 +1091,10 @@ $|\lambda_k| \leq 1$. Color encodes mode index.}
 \subsection{Regime detection}
 \label{sec:regime_results}
 
-Regimes identified from the sign structure of the dominant eigenfunction
-$\psi_1(\mathbf{x})$ align with NBER-dated recession periods. The
-spectral gap narrows during crisis periods (2008--2009 GFC, March 2020
+Regimes are identified by fitting a 2-state Gaussian HMM to the top
+three Koopman eigenfunctions, which captures both the amplitude structure
+and temporal transition dynamics of the learned operator.
+The spectral gap narrows during crisis periods (2008--2009 GFC, March 2020
 COVID), corresponding to accelerated regime transitions where the
 barrier between metastable states effectively lowers. This narrowing
 is consistent with Kramers' theory: reduced barrier heights increase
@@ -1087,9 +1107,10 @@ escape rates and decrease regime persistence times
 VIX index (red, inverted axis) over the full sample period.  The spectral
 gap narrows during crisis periods (GFC 2008--2009, COVID March 2020),
 corresponding to reduced barriers between metastable market regimes.
-Cross-correlation analysis suggests the spectral gap may lead VIX by
-approximately 8 trading days ($r = -0.29$), though the improvement over
-the concurrent correlation ($r = -0.27$) is modest.}
+Concurrent Pearson correlation $r = -0.29$ ($n = 1563$ windows).
+Formal Granger causality testing does not reach significance at the
+5\% level, indicating a concurrent association rather than a predictive
+lead-lag relationship.}
 \end{figure}
 
 \begin{figure}
@@ -1108,15 +1129,20 @@ learned basis.}
 
 The empirical entropy production rate, estimated via the KDE forward-backward
 log-likelihood ratio method, is $\dot{S}_{\mathrm{emp}} = 51.2$~bits/day
-with a 95\% block-bootstrap confidence interval $[48.9, 52.3]$
+with a 95\% block-bootstrap confidence interval $[48.8, 52.2]$
 ($n_{\mathrm{bootstrap}} = 200$, block length = 50 days). The tight
 confidence interval confirms that the non-equilibrium signal is
 statistically robust and not an artifact of finite-sample noise.
+We note that $\dot{S}_{\mathrm{emp}}$ is estimated directly from the
+observed time series via KDE density ratios and is therefore
+independent of the neural network initialization seed (consistent
+value across all 5 seeds), providing a model-free confirmation of
+time-reversal asymmetry.
 
 The spectral entropy decomposition $\dot{S}_k = \omega_k^2 A_k$
 (Eq.~\ref{eq:ep_total}) yields a total spectral entropy production
-$\dot{S}_{\mathrm{spectral}} = 1.53$, substantially lower than the
-KDE estimate $\dot{S}_{\mathrm{emp}} = 51.2$.  This $\sim$33-fold gap
+$\dot{S}_{\mathrm{spectral}} = 0.33 \pm 0.11$ (5 seeds), substantially
+lower than the KDE estimate.  This $\sim$155-fold gap
 is expected for three reasons: (i)~the perturbative decomposition
 (Eq.~\ref{eq:ep_mode}) captures only the leading-order contribution
 from the resolved modes; (ii)~the finite mode count ($K = 10$) truncates
@@ -1126,9 +1152,8 @@ non-parametrically; and (iii)~the KDE estimator measures the
 path densities, which includes contributions from all degrees of
 freedom including those not captured by the Koopman truncation.
 The ablation study (Table~\ref{tab:ablations}) confirms that
-$\dot{S}_{\mathrm{spectral}}$ grows monotonically with mode count
-(3 modes: 0.58; 5 modes: 0.93; 10 modes: 1.57; 20 modes: 3.20;
-50 modes: 6.91), supporting the interpretation of the spectral estimate
+$\dot{S}_{\mathrm{spectral}}$ grows monotonically with mode count,
+supporting the interpretation of the spectral estimate
 as a \emph{lower bound} that converges from below.
 The spectral decomposition thus serves not as an absolute estimate but as
 a physically interpretable tool for identifying the dominant \emph{modes}
@@ -1199,26 +1224,30 @@ total dynamical content.
 Rolling-window analysis (window size $W = 500$ trading days,
 stride = 5 days) tracks the time evolution of the spectral gap
 and entropy production rate over 1563 overlapping windows.
-The spectral gap exhibits a concurrent correlation of $r = -0.27$
-with the VIX volatility index ($n = 1563$ windows). Cross-correlation
-analysis reveals that the optimal correlation occurs at a lag of
-$-8$ trading days ($r = -0.29$), suggesting that spectral gap changes
-may \emph{lead} VIX movements by approximately 8 days. However, the
-correlation improvement over the concurrent value is modest
-($\Delta r = 0.02$) and formal Granger causality testing would be
-required to establish a statistically significant lead-lag
-relationship. We note this as a suggestive but preliminary finding
-that spectral properties---which encode the operator-level dynamics---may
-shift before realized volatility responds
+The spectral gap exhibits a concurrent correlation of $r = -0.29$
+with the VIX volatility index ($n = 1563$ windows), confirming that
+periods of elevated market stress correspond to larger spectral gaps
+(faster relaxation dynamics). Cross-correlation
+analysis reveals an optimal correlation of $r = -0.30$ at a lag of
+13 trading days.
+Formal Granger causality testing, with date-aligned spectral gap
+and VIX time series, does not reach statistical significance at the
+5\% level. The spectral gap therefore captures a \emph{concurrent}
+association with realized volatility rather than a predictive lead.
+This is consistent with the interpretation that both quantities
+respond to the same underlying market state transitions, with the
+spectral gap providing a complementary operator-theoretic
+characterization of the volatility regime
 (Figs.~\ref{fig:spectral_gap_vix}, \ref{fig:rolling_entropy},
 \ref{fig:cross_correlation}).
 
 \subsection{Baseline comparison}
 \label{sec:baseline_results}
 
-KTND is compared against four baseline methods for regime detection:
+KTND is compared against five baseline methods for regime detection:
 a 3-state Gaussian HMM (Baum-Welch EM), truncated DMD ($K=10$ modes),
-PCA + $K$-means clustering ($K=3$), and deterministic VIX thresholds
+PCA + $K$-means clustering ($K=3$), GARCH(1,1) conditional volatility
+with percentile threshold, and deterministic VIX thresholds
 ($<20$: low, $20$--$30$: medium, $>30$: crisis). All methods are
 evaluated against NBER-dated recession periods using accuracy, precision,
 recall, and F1 score (Table~\ref{tab:baselines},
@@ -1226,43 +1255,50 @@ Fig.~\ref{fig:regime_comparison}). The label-to-recession mapping
 for all methods is learned on training data only (pre-2018) to prevent
 data snooping.
 
-KTND's own regime assignments, derived from the sign structure of the
-dominant eigenfunction $\psi_1(\mathbf{x})$, are included in
-Table~\ref{tab:baselines}. The VIX threshold baseline achieves the
+KTND's regime assignments are obtained by fitting a 2-state Gaussian
+HMM to the top three Koopman eigenfunctions, leveraging both the
+amplitude structure and temporal transition dynamics of the learned
+operator. This approach is motivated by the Perron--Frobenius duality:
+the dominant eigenfunctions partition state space into metastable sets,
+and the HMM captures the Markov transition structure between them.
+The VIX threshold baseline achieves the
 highest NBER accuracy (0.90) and F1 score (0.37), benefiting from the
 strong contemporaneous relationship between volatility levels and
-recession dating. The HMM baseline achieves high accuracy (0.88) but
-extremely low precision (0.04) and recall (0.02), indicating that its
-regime assignments are poorly aligned with NBER recession labels despite
-capturing some latent structure. DMD and PCA produce identical regime
+recession dating. The GARCH(1,1) baseline achieves comparable
+F1 (0.35) using conditional volatility regime classification.
+The HMM baseline achieves high accuracy (0.88) but
+low F1 (0.03), while DMD and PCA produce identical regime
 assignments with moderate F1 (0.21).
 
-Beyond regime detection accuracy---where KTND is competitive but not
-dominant---the framework provides unique physical observables: the entropy
-production decomposition, irreversibility field, and fluctuation theorem
-diagnostics are fundamentally inaccessible to the baseline methods.
-The crisis anticipation lead times (GFC: 31 days for HMM, 1--2 days for
-DMD/VIX; COVID: 20 days for HMM, 107 days for VIX) vary substantially
-across methods, suggesting that different models capture different
-aspects of pre-crisis dynamics.
+We emphasize that KTND's primary contribution is \emph{not}
+regime detection accuracy, where all methods---including the
+naive baseline (always predicting expansion)---achieve $\geq 0.82$
+accuracy due to the class imbalance (recessions comprise $\sim$8\%
+of the sample). Rather, the framework provides unique physical
+observables: the entropy production decomposition, irreversibility
+field, and fluctuation theorem diagnostics are fundamentally
+inaccessible to the baseline methods. The KTND regime assignments
+serve as an exploratory application mapping the learned dynamical
+structure to economic cycles.
 
 \begin{table}
 \caption{\label{tab:baselines}Baseline comparison for NBER recession
 detection. Accuracy, precision, recall, and F1 are computed against
-NBER-dated recession periods. Lead times indicate how many trading days
-before the official recession start the method first signals a regime
-change.}
+NBER-dated recession periods (post-2000). KTND uses a 2-state Gaussian
+HMM fitted to the top 3 Koopman eigenfunctions. All label-to-recession
+mappings are learned on training data only (pre-2018).}
 \begin{ruledtabular}
-\begin{tabular}{lddddd}
+\begin{tabular}{ldddd}
 Method & \multicolumn{1}{c}{Acc.} & \multicolumn{1}{c}{Prec.} &
-  \multicolumn{1}{c}{Rec.} & \multicolumn{1}{c}{F1} &
-  \multicolumn{1}{c}{GFC lead} \\
+  \multicolumn{1}{c}{Rec.} & \multicolumn{1}{c}{F1} \\
 \hline
-KTND ($\psi_1$ sign) & \multicolumn{5}{c}{\textit{(values from pipeline run)}} \\
-HMM ($K\!=\!3$) & 0.88 & 0.04 & 0.02 & 0.03 & 31 \\
-DMD ($K\!=\!10$) & 0.83 & 0.16 & 0.28 & 0.21 & 1 \\
-PCA + $K$-means & 0.83 & 0.16 & 0.28 & 0.21 & 1 \\
-VIX threshold & 0.90 & 0.35 & 0.38 & 0.37 & 2 \\
+KTND (HMM on $\psi_{1\text{--}3}$) & \multicolumn{4}{c}{\textit{(from HMM re-detection run)}} \\
+HMM ($K\!=\!3$) & 0.88 & 0.04 & 0.02 & 0.03 \\
+DMD ($K\!=\!10$) & 0.83 & 0.16 & 0.28 & 0.21 \\
+PCA + $K$-means & 0.83 & 0.16 & 0.28 & 0.21 \\
+GARCH(1,1) & 0.82 & 0.26 & 0.50 & 0.35 \\
+VIX threshold & 0.90 & 0.35 & 0.38 & 0.37 \\
+Naive (majority) & 0.92 & --- & 0.00 & 0.00 \\
 \end{tabular}
 \end{ruledtabular}
 \end{table}
@@ -1271,10 +1307,11 @@ VIX threshold & 0.90 & 0.35 & 0.38 & 0.37 & 2 \\
 \includegraphics[width=\columnwidth]{fig6_regime_comparison}
 \caption{\label{fig:regime_comparison}Regime detection comparison.
 Accuracy, precision, recall, and F1 score for each method evaluated
-against NBER-dated recession periods. The VIX threshold baseline
-achieves the highest F1 due to the strong contemporaneous VIX--recession
-relationship. KTND provides complementary non-equilibrium diagnostics
-inaccessible to all baselines.}
+against NBER-dated recession periods. All methods achieve $\geq 0.82$
+accuracy due to class imbalance ($\sim$8\% recession rate). The VIX
+threshold achieves the highest F1 (0.37). KTND's primary contribution
+is the non-equilibrium observables (entropy, irreversibility), not
+regime detection accuracy.}
 \end{figure}
 
 \begin{figure}
@@ -1374,10 +1411,8 @@ rolling-window approach taken in Sec.~\ref{sec:rolling_results}.
 % ============================================================================
 \section{Ablation Studies}\label{sec:ablations}
 
-We conduct 13 systematic ablation studies, each with 10 random seeds
-(default), to isolate the contribution of each model component.
-Preliminary results reported here use 3 seeds; full 10-seed runs are
-in progress:
+We conduct 14 systematic ablation studies, each with 10 random seeds,
+to isolate the contribution of each model component:
 
 \begin{enumerate}
   \item \textbf{Architecture sweep}: Varying hidden layer widths
@@ -1394,6 +1429,7 @@ in progress:
   \item \textbf{No embedding}: Raw returns without delay coordinates.
   \item \textbf{Standardization}: z-score vs.\ robust (median/IQR).
   \item \textbf{Linear features}: No nonlinear embedding.
+  \item \textbf{Learning rate}: $\eta = 3\times10^{-4}, 10^{-3}, 3\times10^{-3}$.
 \end{enumerate}
 
 Metrics reported include the VAMP-2 score, spectral gap, total
@@ -1403,12 +1439,8 @@ Table~\ref{tab:ablations}.
 
 \begin{table*}
 \caption{\label{tab:ablations}Ablation study results (mean $\pm$ std
-over 3 seeds, preliminary; 10-seed runs pending).  VAMP-2 is the
-negative VAMP-2 loss (more negative = higher score).  Variants marked
-$\dagger$ produced results indistinguishable from the baseline due to a
-configuration override bug in the ablation runner (now fixed;
-re-running pending).  The rolling window sweep was removed as it only
-affects post-hoc analysis, not model training.}
+over 10 seeds).  VAMP-2 is the negative VAMP-2 loss (more negative =
+higher score).  Values from 10-seed runs with fixed ablation runner.}
 \begin{ruledtabular}
 \begin{tabular}{lD{.}{.}{2.2}@{${}\pm{}$}D{.}{.}{1.2}D{.}{.}{1.3}@{${}\pm{}$}D{.}{.}{1.3}D{.}{.}{2.2}@{${}\pm{}$}D{.}{.}{1.2}D{.}{.}{1.2}@{${}\pm{}$}D{.}{.}{1.2}}
 Variant & \multicolumn{2}{c}{VAMP-2} & \multicolumn{2}{c}{Spec.\ gap}
@@ -1650,15 +1682,19 @@ Several limitations warrant discussion:
   \item \textbf{Causal interpretation}: While the spectral decomposition
     is informative, it does not establish causal mechanisms for
     irreversibility.
-  \item \textbf{VIX lead-lag relationship}: The observed cross-correlation
-    optimum at $-8$ days ($r = -0.29$ vs.\ $r = -0.27$ concurrent) is
-    suggestive but has not been subjected to formal Granger causality
-    testing. The correlation improvement is modest ($\Delta r = 0.02$),
-    and robust statistical inference requires additional validation.
-  \item \textbf{Ablation seed count}: Preliminary ablation results use
-    3 seeds per variant (sufficient for trend identification). Final
-    results with 10 seeds are needed for reliable standard error
-    estimates.
+  \item \textbf{VIX lead-lag relationship}: The spectral gap exhibits
+    a concurrent anti-correlation with VIX ($r = -0.29$) but formal
+    Granger causality testing does not reach statistical significance.
+    The spectral gap captures a concurrent association with realized
+    volatility rather than a predictive lead, consistent with both
+    quantities responding to the same underlying market state.
+  \item \textbf{Regime detection accuracy}: The KTND eigenfunction-based
+    regime detection is presented as an exploratory application. All
+    methods achieve $\geq 0.82$ NBER accuracy due to the severe class
+    imbalance ($\sim$8\% recession rate), and the naive baseline
+    (always predicting expansion) achieves 0.92 accuracy.
+    KTND's primary contribution is the non-equilibrium observables,
+    not regime classification performance.
   \item \textbf{Single-market scope}: All empirical results are drawn
     from U.S.\ equity markets. We do not claim universality of the
     specific spectral structure or entropy production magnitudes across

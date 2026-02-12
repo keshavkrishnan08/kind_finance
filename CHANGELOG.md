@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## v1.5.1 — HMM Regime Detection + Paper Updates (2026-02-12)
+
+### HMM Regime Detection (`src/analysis/regime.py`, `experiments/run_main.py`)
+- Replaced sign-of-dominant-eigenfunction with 2-state Gaussian HMM on top 3 eigenfunctions
+- HMM captures temporal transition structure + amplitude info + multiple eigenfunctions
+- `detect_from_eigenfunctions(method="hmm")` is now default; falls back to k-means if HMM fails
+
+### Minimal Re-Run Notebook Cell (Cell 2b)
+- Runs ONLY: KTND HMM re-detection (from saved eigenfunctions) + ablations (resume) + gyrator
+- No GPU/retraining needed for regime re-detection (~1 min)
+- Updates all analysis_results JSON files with HMM metrics
+
+### Paper Updates (`paper/main.tex`)
+- Results table: actual Colab values with 5-seed mean +/- std
+- Granger: reported as NOT SIGNIFICANT; concurrent correlation r=-0.29
+- KTND regime detection: reframed as exploratory application
+- Baseline table: GARCH added, naive baseline added, KTND updated for HMM
+- Entropy: clarified empirical EP is seed-independent
+- Training: mode-specific configs documented
+- Ablations: 14 studies, 10 seeds, LR sweep added
+
 ## v1.5.0 — Multi-Seed + GARCH Baseline + Granger Fix (2026-02-11)
 
 ### Multi-Seed Error Bars (`KTND_Finance_Colab.ipynb`, `experiments/run_main.py`)
