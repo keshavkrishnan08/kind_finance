@@ -46,6 +46,7 @@ from src.data.preprocessing import (
 from src.baselines.hmm import HMMBaseline
 from src.baselines.dmd import DMDBaseline
 from src.baselines.pca import PCABaseline
+from src.baselines.garch import GARCHBaseline
 from src.baselines.threshold import VIXThresholdBaseline
 from src.analysis.regime import RegimeDetector
 
@@ -298,6 +299,52 @@ def run_pca_baseline(
     }
 
 
+def run_garch_baseline(
+    train_returns: np.ndarray,
+    test_returns: np.ndarray,
+    full_returns: np.ndarray,
+    dates: pd.DatetimeIndex,
+) -> Dict[str, Any]:
+    """Fit GARCH(1,1) and evaluate regime detection."""
+    logger.info("Fitting GARCH(1,1) baseline ...")
+    t0 = time.time()
+
+    # GARCH requires univariate input — use first column if multivariate
+    train_r = train_returns.ravel() if train_returns.ndim == 1 else train_returns[:, 0]
+    test_r = test_returns.ravel() if test_returns.ndim == 1 else test_returns[:, 0]
+    full_r = full_returns.ravel() if full_returns.ndim == 1 else full_returns[:, 0]
+
+    garch = GARCHBaseline(high_vol_percentile=80)
+    garch.fit(train_r)
+
+    full_labels = garch.predict(full_r)
+    metrics = garch.get_metrics()
+    elapsed = time.time() - t0
+
+    # Regime detection comparison with NBER
+    nber_results = RegimeDetector.compare_with_nber(full_labels, dates)
+    timing = compute_regime_timing(full_labels, dates)
+
+    return {
+        "method": "GARCH",
+        "n_states": 2,
+        "train_ll": metrics["log_likelihood"],
+        "test_ll": None,
+        "aic": metrics["aic"],
+        "bic": metrics["bic"],
+        "nber_accuracy": nber_results["accuracy"],
+        "nber_precision": nber_results["precision"],
+        "nber_recall": nber_results["recall"],
+        "nber_f1": nber_results["f1"],
+        "n_transitions": timing["n_transitions"],
+        "mean_regime_duration": timing["mean_regime_duration"],
+        "gfc_lead_days": timing.get("gfc_lead_days"),
+        "covid_lead_days": timing.get("covid_lead_days"),
+        "elapsed_sec": elapsed,
+        "regime_labels": full_labels,
+    }
+
+
 def run_vix_baseline(
     vix_data: Optional[np.ndarray],
     dates: pd.DatetimeIndex,
@@ -424,7 +471,16 @@ def main() -> None:
     except Exception as e:
         logger.error("PCA baseline failed: %s", e)
 
-    # 4. VIX Threshold
+    # 4. GARCH(1,1)
+    try:
+        garch_result = run_garch_baseline(
+            train_returns, test_returns, full_returns, dates,
+        )
+        all_results.append(garch_result)
+    except Exception as e:
+        logger.error("GARCH baseline failed: %s", e)
+
+    # 5. VIX Threshold
     try:
         vix_result = run_vix_baseline(vix_data, dates)
         if vix_result is not None:

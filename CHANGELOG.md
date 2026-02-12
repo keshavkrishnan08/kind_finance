@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## v1.5.0 — Multi-Seed + GARCH Baseline + Granger Fix (2026-02-11)
+
+### Multi-Seed Error Bars (`KTND_Finance_Colab.ipynb`, `experiments/run_main.py`)
+- **5 seeds** (42, 0-3) for main results: trains each mode 5 times, aggregates mean +/- std
+- Resume-safe: skips already-completed seed/mode combinations on re-run
+- `vamp2_score` and `test_total_loss` now saved to `analysis_results_{mode}.json` for aggregation
+- Saves `multi_seed_summary.json` with per-metric mean/std across seeds
+
+### GARCH(1,1) Baseline (`src/baselines/garch.py`, `experiments/run_baselines.py`)
+- Standard econophysics volatility regime detector (PRE reviewers expect this)
+- Fits GARCH(1,1) to log-returns, extracts conditional volatility, classifies by percentile threshold
+- Returns AIC, BIC, NBER accuracy/precision/recall/F1
+- Integrated as baseline #4 in `run_baselines.py`
+
+### Learning Rate Ablation (`config/ablation/lr_sweep.yaml`)
+- New ablation sweep over Adam learning rates: [3e-4, 1e-3, 3e-3]
+- Tests sensitivity of VAMP-2 and spectral quantities to optimizer step size
+
+### Granger Date Alignment Fix (`experiments/run_robustness.py`)
+- Spectral gap (1 value per rolling window) and VIX (daily) were aligned by array position, not date
+- Now creates date-indexed `pd.Series` for both, aligns on common dates via index intersection
+- Requires minimum 50 overlapping dates for valid Granger test
+
+### Notebook Updates
+- Version bumped to v1.5.0
+- PART A2 added: multi-seed loop between figures and ablations
+- Final report now shows both single-seed (seed 42) and multi-seed aggregated results
+
 ## v1.4.0 — Model Tuning + Bug Fixes + Brownian Gyrator (2026-02-11)
 
 ### Critical: Model/Statistical Improvements (based on Colab run diagnostics)
@@ -13,8 +41,6 @@ Previous run showed: CK test FAILED, permutation p=0.232, VIX correlation -0.04.
 5. **CK test improved** (`run_robustness.py`): `n_steps` 5→3, `block_size` 50→10, switched to relative error, compare top-k eigenvalues only. Reduces noise-dominated comparisons.
 6. **Config loading bug** (notebook): Changed `--config config/univariate.yaml` to `--config config/default.yaml` for both training stages. Previous approach skipped all default.yaml values (loss weights, training params) because `load_config` doesn't resolve `defaults:` keys. This caused `w_spectral` to use fallback 0.1 instead of config's 1e-5 (10,000x higher).
 7. **Loss weight consistency** (`run_main.py`): Now passes `w_entropy` and handles both `spectral_penalty_weight`/`gamma_regularization` keys, matching the ablation runner.
-
-### Critical: 6 Ablation Runner Bugs Fixed (`experiments/run_ablations.py`)
 
 ### Critical: 6 Ablation Runner Bugs Fixed (`experiments/run_ablations.py`)
 

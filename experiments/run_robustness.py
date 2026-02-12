@@ -800,22 +800,37 @@ def main() -> None:
 
     # Test 5: Granger causality
     try:
-        # Try to load spectral gap timeseries from rolling analysis
+        # Load spectral gap timeseries WITH dates from rolling analysis
         sg_file = output_dir / "spectral_gap_timeseries.csv"
         spectral_gap_ts = None
         vix_ts = None
 
         if sg_file.exists():
             sg_df = pd.read_csv(sg_file)
-            if "spectral_gap" in sg_df.columns:
-                spectral_gap_ts = sg_df["spectral_gap"].values
+            if "spectral_gap" in sg_df.columns and "center_date" in sg_df.columns:
+                sg_dates = pd.to_datetime(sg_df["center_date"])
+                sg_series = pd.Series(
+                    sg_df["spectral_gap"].values, index=sg_dates
+                ).sort_index()
+                sg_series = sg_series[~sg_series.index.duplicated(keep="first")]
 
-        # Load VIX data
-        vix_file = project_root / "data" / "vix.csv"
-        if vix_file.exists():
-            vix_df = pd.read_csv(vix_file, index_col=0, parse_dates=True)
-            vix_col = "Close" if "Close" in vix_df.columns else vix_df.columns[0]
-            vix_ts = vix_df[vix_col].values
+                # Load VIX with date index and align on common dates
+                vix_file = project_root / "data" / "vix.csv"
+                if vix_file.exists():
+                    vix_df = pd.read_csv(vix_file, index_col=0, parse_dates=True)
+                    vix_col = "Close" if "Close" in vix_df.columns else vix_df.columns[0]
+                    vix_series = vix_df[vix_col].sort_index()
+                    vix_series = vix_series[~vix_series.index.duplicated(keep="first")]
+
+                    # Date-align: only use dates present in both series
+                    common_dates = sg_series.index.intersection(vix_series.index)
+                    if len(common_dates) > 50:
+                        spectral_gap_ts = sg_series.loc[common_dates].values
+                        vix_ts = vix_series.loc[common_dates].values
+                        logger.info("Granger: %d common dates between spectral gap and VIX",
+                                    len(common_dates))
+                    else:
+                        logger.warning("Granger: only %d common dates, need >50", len(common_dates))
 
         gc_result = granger_causality_test(spectral_gap_ts, vix_ts)
         all_tests["granger_causality"] = gc_result
