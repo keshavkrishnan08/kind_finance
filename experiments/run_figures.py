@@ -348,7 +348,41 @@ def fig7_training_curves(
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
-    # Look for metrics.csv in log directories
+    # Look for training_history_*.json in results dir first (preferred)
+    history_results = {}
+    for mode in ["univariate", "multiasset"]:
+        hp = results_dir / f"training_history_{mode}.json"
+        if hp.exists():
+            with open(hp) as f:
+                history_results[mode] = json.load(f)
+
+    if history_results:
+        n_modes = len(history_results)
+        fig, axes = plt.subplots(n_modes, 2, figsize=(14, 5 * n_modes), squeeze=False)
+        for row, (mode, history) in enumerate(history_results.items()):
+            epochs = range(1, len(history.get("train_total", [])) + 1)
+            ax1, ax2 = axes[row]
+
+            if "train_total" in history:
+                ax1.plot(epochs, history["train_total"], label="Train", color="steelblue", alpha=0.8)
+            if "val_total" in history:
+                ax1.plot(epochs, history["val_total"], label="Val", color="firebrick", alpha=0.8)
+            ax1.set_xlabel("Epoch"); ax1.set_ylabel("Total Loss")
+            ax1.set_title(f"Total Loss ({mode})"); ax1.legend(); ax1.grid(True, alpha=0.3)
+
+            if "train_vamp2" in history:
+                ax2.plot(epochs, [-v for v in history["train_vamp2"]], label="Train", color="steelblue", alpha=0.8)
+            if "val_vamp2" in history:
+                ax2.plot(epochs, [-v for v in history["val_vamp2"]], label="Val", color="firebrick", alpha=0.8)
+            ax2.set_xlabel("Epoch"); ax2.set_ylabel("VAMP-2 Score")
+            ax2.set_title(f"VAMP-2 Score ({mode})"); ax2.legend(); ax2.grid(True, alpha=0.3)
+
+        fig.suptitle("Training Convergence", fontsize=14, y=1.02)
+        fig.tight_layout()
+        _save_figure(fig, figures_dir, "fig7_training_curves")
+        return
+
+    # Fallback: look for metrics.csv in log directories
     logs_dir = results_dir.parent / "logs"
     metrics_file = None
     if logs_dir.exists():
