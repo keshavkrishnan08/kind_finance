@@ -31,8 +31,8 @@ training:
 # --- Loss Function Weights ---
 losses:
   alpha_entropy: 0.1
-  beta_orthogonality: 0.001
-  gamma_regularization: 1.0e-6
+  beta_orthogonality: 0.005
+  gamma_regularization: 1.0e-5
 
 # --- Rolling Window ---
 rolling:
