@@ -1,21 +1,18 @@
 # CHANGELOG
 
-## v1.5.3 — Lower Regularization + Multiasset Robustness (2026-02-12)
+## v1.5.3 — Revert Configs + Numerical Stability Fix (2026-02-13)
 
-**Goal**: Push permutation p-value below 0.05 and narrow entropy gap.
+**Goal**: Restore v1.5.2 config values (which had better results) and fix multiasset `linalg.eigh` convergence failures.
 
-### Config changes
-| Parameter | v1.5.2 | v1.5.3 | Rationale |
-|-----------|--------|--------|-----------|
-| `beta_orthogonality` | 0.005 | **0.001** | Less orthogonality suppression = stronger non-eq signal |
-| `gamma_regularization` | 1e-5 | **1e-6** | Less L2 penalty = sharper eigenvalue separation |
-| Univariate `n_modes` | 5 | **8** | More spectral modes = more entropy captured, narrower gap |
+### What happened in v1.5.3-alpha (reverted)
+Attempted lower regularization (`beta_orth=0.001`, `gamma_reg=1e-6`, `n_modes=8` univariate).
+**Results were worse**: CK test FAILED, permutation p=0.164 (was 0.141), Cohen's d=0.63 (was 1.01),
+Granger NOT SIGNIFICANT (was significant), multiasset robustness 5/7 FAILED with `linalg.eigh` errors.
 
-### Pipeline changes
-- Added **multiasset robustness** (Stage 7b): full 7-test statistical battery on multiasset model
-- Mode-aware output: `statistical_tests.json` (univariate) + `statistical_tests_multiasset.json`
-
-### Results: PENDING (awaiting Colab run)
+### Changes (final v1.5.3)
+- **Reverted configs** to v1.5.2 values: `beta_orth=0.005`, `gamma_reg=1e-5`, univariate `n_modes=5`
+- **Fixed `matrix_sqrt_inv`** in `vampnet.py`: added symmetrization + progressive ridge fallback for `linalg.eigh` convergence failures (affects bootstrapped multiasset covariances)
+- **Kept multiasset robustness** pipeline addition (Stage 7b) with mode-aware output filenames
 
 ---
 

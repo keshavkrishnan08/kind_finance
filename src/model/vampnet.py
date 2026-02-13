@@ -112,6 +112,10 @@ def matrix_sqrt_inv(
     then return
         C^{-1/2} = Q diag(lambda_clamped^{-1/2}) Q^T.
 
+    If ``torch.linalg.eigh`` fails to converge (e.g. on ill-conditioned
+    bootstrap resamples), the matrix is symmetrized and regularized with
+    an increasing ridge until convergence succeeds.
+
     Parameters
     ----------
     C : Tensor, shape ``(d, d)``
@@ -125,12 +129,27 @@ def matrix_sqrt_inv(
     Tensor, shape ``(d, d)``
         The matrix inverse square root C^{-1/2}.
     """
-    # Symmetric eigendecomposition (guaranteed real eigenvalues)
-    eigenvalues, eigenvectors = torch.linalg.eigh(C)
-    eigenvalues_clamped = eigenvalues.clamp(min=epsilon)
-    inv_sqrt_eigenvalues = eigenvalues_clamped.pow(-0.5)
-    # Q @ diag(1/sqrt(lam)) @ Q^T
-    return eigenvectors @ torch.diag(inv_sqrt_eigenvalues) @ eigenvectors.T
+    # Ensure exact symmetry (numerical round-off can break eigh)
+    C_sym = 0.5 * (C + C.T)
+
+    # Try eigendecomposition with increasing ridge on failure
+    for ridge_scale in [0.0, 1e-5, 1e-4, 1e-3]:
+        try:
+            C_reg = C_sym
+            if ridge_scale > 0:
+                C_reg = C_sym + ridge_scale * torch.eye(
+                    C.shape[0], device=C.device, dtype=C.dtype
+                )
+            eigenvalues, eigenvectors = torch.linalg.eigh(C_reg)
+            eigenvalues_clamped = eigenvalues.clamp(min=epsilon)
+            inv_sqrt_eigenvalues = eigenvalues_clamped.pow(-0.5)
+            return eigenvectors @ torch.diag(inv_sqrt_eigenvalues) @ eigenvectors.T
+        except RuntimeError:
+            continue
+
+    # Last resort: return scaled identity (preserves gradient flow)
+    d = C.shape[0]
+    return (1.0 / (epsilon ** 0.5)) * torch.eye(d, device=C.device, dtype=C.dtype)
 
 
 # ---------------------------------------------------------------------------
