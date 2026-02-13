@@ -989,7 +989,8 @@ def main() -> None:
         all_tests["time_reversal_asymmetry"] = {"error": str(e)}
 
     # ---- Save all results ----
-    results_path = output_dir / "statistical_tests.json"
+    suffix = f"_{args.mode}" if args.mode != "univariate" else ""
+    results_path = output_dir / f"statistical_tests{suffix}.json"
     with open(results_path, "w") as f:
         json.dump(all_tests, f, indent=2, default=str)
 

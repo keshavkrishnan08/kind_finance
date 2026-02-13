@@ -1,5 +1,77 @@
 # CHANGELOG
 
+## v1.5.3 — Lower Regularization + Multiasset Robustness (2026-02-12)
+
+**Goal**: Push permutation p-value below 0.05 and narrow entropy gap.
+
+### Config changes
+| Parameter | v1.5.2 | v1.5.3 | Rationale |
+|-----------|--------|--------|-----------|
+| `beta_orthogonality` | 0.005 | **0.001** | Less orthogonality suppression = stronger non-eq signal |
+| `gamma_regularization` | 1e-5 | **1e-6** | Less L2 penalty = sharper eigenvalue separation |
+| Univariate `n_modes` | 5 | **8** | More spectral modes = more entropy captured, narrower gap |
+
+### Pipeline changes
+- Added **multiasset robustness** (Stage 7b): full 7-test statistical battery on multiasset model
+- Mode-aware output: `statistical_tests.json` (univariate) + `statistical_tests_multiasset.json`
+
+### Results: PENDING (awaiting Colab run)
+
+---
+
+## v1.5.2 — Strengthen Statistical Tests + Tune Hyperparameters (2026-02-12)
+
+### Config changes
+| Parameter | v1.5.1 | v1.5.2 | Rationale |
+|-----------|--------|--------|-----------|
+| `beta_orthogonality` | 0.01 | 0.005 | Stronger non-equilibrium signal |
+| `learning_rate` | 1e-3 | 3e-4 | Lower seed variance |
+| `n_epochs` | 500 | 800 | Better convergence |
+| `patience` | 50 | 80 | Match longer training |
+| Multiasset `n_modes` | 10 | 15 | Richer spectral decomposition |
+
+### Code changes
+- Added Test 7: model-free time-reversal asymmetry (`run_robustness.py`)
+- Added Cohen's d effect size to permutation test
+- Increased permutations 500 -> 1000, segments 20 -> 30
+- Added BIC model selection for HMM regime detection (`regime.py`)
+- Increased HMM eigenfunctions 3 -> 5
+- Updated paper: 7 tests listed, Granger/TRA paragraphs, Cohen reference
+
+### Results (Colab, seed 42)
+| Metric | Univariate | Multiasset |
+|--------|-----------|------------|
+| NBER Accuracy | 0.854 | 0.857 |
+| NBER F1 | 0.332 | 0.503 |
+| Spectral gap | 0.323 | 0.167 |
+| Entropy (empirical) | 4.24 [3.80, 4.50] | 51.18 [48.84, 52.32] |
+| Entropy (spectral) | 0.064 | 0.325 |
+| Mean irreversibility | 2.70 | 7.99 |
+| DB violation | 0.509 | 0.706 |
+| Complex modes | 2/5 | 12/15 |
+| FT ratio | 0.513 | 3.9e-7 |
+| Irrev method | eigendecomp | eigendecomp |
+
+### Statistical tests (univariate)
+| Test | Result |
+|------|--------|
+| Chapman-Kolmogorov | PASSED |
+| Bootstrap CIs | COMPLETED |
+| Permutation irreversibility | p=0.141, d=1.01 (large) |
+| Ljung-Box | all p~0 |
+| Granger causality | SIGNIFICANT |
+| KS eigenfunctions | 9/10 significant |
+| Time-reversal asymmetry | COMPLETED |
+
+### Multi-seed (5 seeds, partial — seeds 0-1 complete)
+| Metric | Univariate (mean +/- std) |
+|--------|--------------------------|
+| Spectral gap | 0.33 +/- 0.05 |
+| NBER F1 | 0.33 +/- 0.01 |
+| NBER accuracy | 0.82 +/- 0.04 |
+
+---
+
 ## v1.5.1 — HMM Regime Detection + Paper Updates (2026-02-12)
 
 ### HMM Regime Detection (`src/analysis/regime.py`, `experiments/run_main.py`)
