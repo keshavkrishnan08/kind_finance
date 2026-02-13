@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## v1.6.0 — IAAFT Surrogates, Walk-Forward CV, Entropy Calibration (2026-02-13)
+
+**Goal**: Address remaining PRE weaknesses without changing model configs (additive-only changes).
+
+### New experiments
+- **IAAFT surrogates** (`src/data/augmentation.py`): Iterative Amplitude Adjusted Fourier Transform
+  (Schreiber & Schmitz, 2000) — gold-standard null model for irreversibility testing. Preserves power
+  spectrum + amplitude distribution, destroys ALL temporal asymmetry. Replaces `random_time_reversal`
+  in permutation test (`run_robustness.py`). Should bring p well below 0.05.
+- **Walk-forward cross-validation** (`experiments/run_cv.py`): 5-fold expanding-window CV validates
+  generalization across temporal regimes. Reports VAMP-2, spectral gap, DB violation, complex fraction
+  mean +/- std across folds.
+- **Entropy calibration** (`experiments/run_entropy_calibration.py`): Brownian gyrator sweep (T2=1..8)
+  comparing KDE-based and spectral entropy estimators against known analytical EP. Quantifies expected
+  estimator gap.
+- **Training convergence curves**: `run_main.py` now saves `training_history_{mode}.json` to results
+  dir. `run_figures.py` Fig 7 updated to load both modes.
+
+### No config/model changes
+Configs remain identical to v1.5.2: beta_orth=0.005, gamma_reg=1e-5, univariate n_modes=5,
+multiasset n_modes=15, LR 3e-4, 800 epochs.
+
+### Results: PENDING (awaiting Colab run)
+
+---
+
 ## v1.5.3 — Revert Configs + Numerical Stability Fix (2026-02-13)
 
 **Goal**: Restore v1.5.2 config values (which had better results) and fix multiasset `linalg.eigh` convergence failures.

@@ -1,6 +1,6 @@
 """Data augmentation for statistical validation (KTND-Finance).
 
-Provides two augmentation strategies that preserve the relevant
+Provides augmentation strategies that preserve the relevant
 statistical structure of the original time series while generating
 synthetic variants for bootstrap confidence intervals and robustness
 checks:
@@ -9,6 +9,9 @@ checks:
   short-range autocorrelation.
 - ``random_time_reversal``: reverses randomly selected sub-segments
   to test time-asymmetry (a hallmark of non-equilibrium dynamics).
+- ``iaaft_surrogate``: Iterative Amplitude Adjusted Fourier Transform
+  surrogates that preserve power spectrum and amplitude distribution
+  while destroying temporal asymmetry (Schreiber & Schmitz, 2000).
 """
 from __future__ import annotations
 
@@ -164,3 +167,117 @@ def random_time_reversal(
         augmented[i] = sample
 
     return augmented
+
+
+def _iaaft_1d(
+    x: NDArray[np.floating],
+    rng: np.random.Generator,
+    max_iter: int = 100,
+    tol: float = 1e-8,
+) -> NDArray[np.floating]:
+    """Single-channel IAAFT surrogate (Schreiber & Schmitz, 2000).
+
+    Iteratively adjusts a randomized-phase Fourier surrogate to match
+    both the power spectrum AND the amplitude distribution of *x*.
+
+    Parameters
+    ----------
+    x : ndarray of shape (T,)
+        Original univariate time series.
+    rng : numpy.random.Generator
+    max_iter : int
+        Maximum IAAFT iterations.
+    tol : float
+        Convergence tolerance on the spectrum matching.
+
+    Returns
+    -------
+    surrogate : ndarray of shape (T,)
+    """
+    T = len(x)
+    sorted_x = np.sort(x)
+    target_fft = np.fft.rfft(x)
+    target_amplitudes = np.abs(target_fft)
+
+    # Step 1: initial shuffle (random rank ordering)
+    surrogate = x.copy()
+    rng.shuffle(surrogate)
+
+    prev_spec_diff = np.inf
+    for _ in range(max_iter):
+        # Step 2: impose target power spectrum
+        surr_fft = np.fft.rfft(surrogate)
+        surr_phases = np.angle(surr_fft)
+        adjusted_fft = target_amplitudes * np.exp(1j * surr_phases)
+        surrogate_spectral = np.fft.irfft(adjusted_fft, n=T)
+
+        # Step 3: impose target amplitude distribution via rank ordering
+        ranks = np.argsort(np.argsort(surrogate_spectral))
+        surrogate = sorted_x[ranks]
+
+        # Check convergence
+        spec_diff = np.mean((np.abs(np.fft.rfft(surrogate)) - target_amplitudes) ** 2)
+        if abs(prev_spec_diff - spec_diff) < tol:
+            break
+        prev_spec_diff = spec_diff
+
+    # Final spectrum adjustment (keep spectrum exact, amplitude approximate)
+    surr_fft = np.fft.rfft(surrogate)
+    surr_phases = np.angle(surr_fft)
+    surrogate = np.fft.irfft(target_amplitudes * np.exp(1j * surr_phases), n=T)
+
+    return surrogate
+
+
+def iaaft_surrogate(
+    data: NDArray[np.floating],
+    n_samples: int = 1,
+    max_iter: int = 100,
+    rng: Optional[np.random.Generator] = None,
+) -> NDArray[np.floating]:
+    """Generate IAAFT surrogates of a multivariate time series.
+
+    Iterative Amplitude Adjusted Fourier Transform (Schreiber & Schmitz,
+    2000) preserves the power spectrum and marginal amplitude distribution
+    of each channel but destroys all nonlinear temporal structure including
+    time-reversal asymmetry.  This is the gold-standard null model for
+    testing irreversibility / broken detailed balance.
+
+    Each channel is treated independently (channel-wise IAAFT), which is
+    the standard approach for multivariate time series.
+
+    Parameters
+    ----------
+    data : ndarray of shape (T, D)
+        Input time series (rows = time, columns = features).
+    n_samples : int
+        Number of surrogate realisations to generate.
+    max_iter : int
+        Maximum IAAFT iterations per channel.
+    rng : numpy.random.Generator, optional
+        Random number generator for reproducibility.
+
+    Returns
+    -------
+    surrogates : ndarray of shape (n_samples, T, D)
+
+    References
+    ----------
+    Schreiber, T. & Schmitz, A. (2000). Surrogate time series.
+    Physica D, 142(3-4), 346-382.
+    """
+    data = np.asarray(data, dtype=np.float64)
+    if data.ndim == 1:
+        data = data[:, np.newaxis]
+    T, D = data.shape
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    surrogates = np.empty((n_samples, T, D), dtype=np.float64)
+
+    for i in range(n_samples):
+        for d in range(D):
+            surrogates[i, :, d] = _iaaft_1d(data[:, d], rng, max_iter=max_iter)
+
+    return surrogates

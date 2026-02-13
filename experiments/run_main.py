@@ -778,6 +778,12 @@ def main() -> None:
     history = train(model, train_loader, val_loader, config, device, exp_logger)
     exp_logger.save_history(history)
 
+    # Also save history to results dir for figure generation
+    history_path = results_dir / f"training_history_{args.mode}.json"
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2, default=str)
+    logger.info("Training history saved to %s", history_path)
+
     # ----- Save checkpoint -----
     ckpt_path = models_dir / f"vampnet_{args.mode}.pt"
     torch.save({
