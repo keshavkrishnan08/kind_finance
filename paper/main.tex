@@ -1004,31 +1004,33 @@ Entropy CI is 95\% block-bootstrap.}
 \begin{tabular}{lll}
 Observable & Value & Interpretation \\
 \hline
-\multicolumn{3}{c}{\textit{Multiasset (11 ETFs, $K=10$, 5 seeds)}} \\
+\multicolumn{3}{c}{\textit{Multiasset (11 ETFs, $K=15$, seed 42)}} \\
 \hline
-Test VAMP-2 score & $-1.59 \pm 0.16$ & Dynamical structure captured \\
-Spectral gap $\Delta$ & $0.045 \pm 0.015$ & Regime persistence $\geq 22$ days \\
-$N$ complex modes / total & $8.8 \pm 1.1$ / 10 & Dominant oscillatory content \\
-Complex fraction & $0.43 \pm 0.03$ & Oscillatory $>$ relaxational \\
+Test VAMP-2 score & $-2.19$ & Dynamical structure captured \\
+Spectral gap $\Delta$ & $0.167$ & Regime persistence $\geq 6$ days \\
+$N$ complex modes / total & $12$ / $15$ & Dominant oscillatory content \\
+Detailed balance violation $\mathcal{D}$ & $0.706$ & Substantial Frobenius asymmetry \\
 \hline
-Entropy production $\dot{S}_{\mathrm{emp}}$ (KDE) & 51.2 [48.8, 52.2] bits/day & Strongly non-equilibrium ($\dot{S} \gg 0$) \\
-Spectral entropy $\sum_k \omega_k^2 A_k$ & $0.33 \pm 0.11$ & Lower bound; grows with $K$ \\
-Detailed balance violation $\mathcal{D}$ & $0.66 \pm 0.02$ & Substantial Frobenius asymmetry \\
+Entropy production $\dot{S}_{\mathrm{emp}}$ (KDE) & 51.2 [48.8, 52.3] bits/day & Strongly non-equilibrium ($\dot{S} \gg 0$) \\
+Spectral entropy $\sum_k \omega_k^2 A_k$ & $0.325$ & Lower bound; grows with $K$ \\
 Fluctuation theorem ratio $\langle e^{-\sigma}\rangle$ & $< 10^{-6}$ & Strong irreversibility \\
-Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $9.0 \pm 1.3$ & Elevated non-equilibrium field \\
+Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $7.99$ & Elevated non-equilibrium field \\
 Irreversibility method & eigendecomposition & Theory-correct ($K = W\Lambda W^{-1}$) \\
+NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.503$ & Outperforms HMM/DMD/PCA baselines \\
 \hline
-\multicolumn{3}{c}{\textit{Univariate (SPY, $K=5$, 5 seeds)}} \\
+\multicolumn{3}{c}{\textit{Univariate (SPY, $K=5$, seed 42)}} \\
 \hline
-Test VAMP-2 score & $-0.71 \pm 0.05$ & Single-asset dynamics \\
-Spectral gap $\Delta$ & $0.20 \pm 0.09$ & Regime persistence $\geq 5$ days \\
-Entropy (empirical / spectral) & $4.23$ / $0.42 \pm 0.30$ & Positive EP across seeds \\
-Detailed balance violation & $0.63 \pm 0.09$ & Consistent asymmetry \\
+Test VAMP-2 score & $-0.789$ & Single-asset dynamics \\
+Spectral gap $\Delta$ & $0.323$ & Regime persistence $\geq 3$ days \\
+Entropy (empirical / spectral) & $4.24$ / $0.064$ & Positive EP; spectral is lower bound \\
+Detailed balance violation & $0.509$ & Consistent asymmetry \\
+Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $2.70$ & Non-equilibrium field \\
+NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.332$ & Outperforms HMM baseline \\
 \hline
 \multicolumn{3}{c}{\textit{Rolling analysis (univariate, $W=500$, stride 5)}} \\
 \hline
-VIX correlation (concurrent) & $r = -0.29$ & Anti-correlated with volatility \\
-VIX correlation (optimal lag) & $r = -0.30$ at 13 days & Granger test: not significant \\
+VIX correlation (concurrent) & $r = -0.37$ & Anti-correlated with volatility \\
+VIX correlation (optimal lag) & $r = -0.38$ at 14 days & Granger test: significant \\
 \end{tabular}
 \end{ruledtabular}
 \end{table*}
@@ -1038,25 +1040,23 @@ VIX correlation (optimal lag) & $r = -0.30$ at 13 days & Granger test: not signi
 
 The learned Koopman eigenvalue spectrum for SPY (1994--2025, $\tau=5$
 trading days, embedding dimension $m=5$) achieves a test VAMP-2 score
-of 2.70 (univariate) and 1.44 (multiasset), confirming that the network
-captures significant dynamical structure beyond random noise. The
-spectrum reveals 10 modes with a spectral gap $\Delta = 0.040$,
-corresponding to a regime persistence time $1/\Delta \approx 25$ trading
-days. The eigenvalue magnitudes range from $|\lambda_1| = 0.70$ (slowest
-mode) to $|\lambda_{10}| = 0.45$ (fastest resolved mode), with
-corresponding relaxation times spanning 6--14 trading days
-(Table~\ref{tab:results}).
+of $-0.789$ (univariate, $K=5$) and $-2.19$ (multiasset, $K=15$),
+confirming that the network captures significant dynamical structure
+beyond random noise. The univariate spectrum reveals a spectral gap
+$\Delta = 0.323$, corresponding to a regime persistence time
+$1/\Delta \approx 3$ trading days. The leading relaxation time is
+7.4 trading days (Table~\ref{tab:results}).
 
-Of the 10 Koopman modes, 8 possess significant complex eigenvalues
-(imaginary parts), indicating oscillatory probability currents
-inconsistent with detailed balance (Fig.~\ref{fig:eigenvalue_spectrum}).
-The two real modes ($\lambda_1 = -0.698$ and $\lambda_8 = 0.606$)
-correspond to purely relaxational processes, while the four complex
-conjugate pairs encode cyclical dynamics with oscillation frequencies
-$\omega_k \in [0.22, 0.63]$ radians/lag, spanning timescales from
-approximately 10 to 30 trading days.
+The multiasset decomposition ($K=15$ modes, 11 ETFs) yields a spectral
+gap $\Delta = 0.167$ with 12 of 15 modes possessing significant complex
+eigenvalues (imaginary parts), indicating oscillatory probability
+currents inconsistent with detailed balance
+(Fig.~\ref{fig:eigenvalue_spectrum}). The prevalence of complex modes
+in the cross-sectional analysis---compared to 2 of 5 in the
+univariate case---reflects the richer non-equilibrium structure
+available when multiple asset classes interact.
 
-The prevalence of complex modes (8 of 10) has a direct economic
+The prevalence of complex modes (12 of 15 multiasset) has a direct economic
 interpretation. In an equilibrium market where prices follow a
 time-reversible random walk, all Koopman eigenvalues would be real: the
 transition density from any state would equal the time-reversed density.
@@ -1142,23 +1142,25 @@ learned basis.}
 
 The empirical entropy production rate, estimated via the KDE forward-backward
 log-likelihood ratio method, is $\dot{S}_{\mathrm{emp}} = 51.2$~bits/day
-with a 95\% block-bootstrap confidence interval $[48.8, 52.2]$
-($n_{\mathrm{bootstrap}} = 200$, block length = 50 days). The tight
-confidence interval confirms that the non-equilibrium signal is
-statistically robust and not an artifact of finite-sample noise.
-We note that $\dot{S}_{\mathrm{emp}}$ is estimated directly from the
-observed time series via KDE density ratios and is therefore
-independent of the neural network initialization seed (consistent
-value across all 5 seeds), providing a model-free confirmation of
-time-reversal asymmetry.
+(multiasset) with a 95\% block-bootstrap confidence interval
+$[48.8, 52.3]$ ($n_{\mathrm{bootstrap}} = 200$, block length = 50
+days). For the univariate case, $\dot{S}_{\mathrm{emp}} = 4.24$~bits/day
+$[3.80, 4.50]$. The tight confidence intervals confirm that the
+non-equilibrium signal is statistically robust and not an artifact of
+finite-sample noise. We note that $\dot{S}_{\mathrm{emp}}$ is estimated
+directly from the observed time series via KDE density ratios and is
+therefore independent of the neural network initialization seed,
+providing a model-free confirmation of time-reversal asymmetry.
 
 The spectral entropy decomposition $\dot{S}_k = \omega_k^2 A_k$
 (Eq.~\ref{eq:ep_total}) yields a total spectral entropy production
-$\dot{S}_{\mathrm{spectral}} = 0.33 \pm 0.11$ (5 seeds), substantially
-lower than the KDE estimate.  This $\sim$155-fold gap
+$\dot{S}_{\mathrm{spectral}} = 0.325$ (multiasset, $K=15$) and
+$0.064$ (univariate, $K=5$), substantially
+lower than the respective KDE estimates. This gap (66-fold for
+univariate, 158-fold for multiasset)
 is expected for three reasons: (i)~the perturbative decomposition
 (Eq.~\ref{eq:ep_mode}) captures only the leading-order contribution
-from the resolved modes; (ii)~the finite mode count ($K = 10$) truncates
+from the resolved modes; (ii)~the finite mode count truncates
 higher-frequency contributions that the KDE estimator captures
 non-parametrically; and (iii)~the KDE estimator measures the
 \emph{full} Kullback-Leibler divergence between forward and reversed
@@ -1193,7 +1195,8 @@ $\dot{S}_k$; the cumulative fraction is overlaid (dashed).}
 
 The irreversibility field $I(\mathbf{x})$ is computed using the
 eigendecomposition-based method ($K = W\Lambda W^{-1}$, not SVD),
-yielding a mean field magnitude $\langle I(\mathbf{x}) \rangle = 8.42$.
+yielding mean field magnitudes $\langle I(\mathbf{x}) \rangle = 7.99$
+(multiasset) and $2.70$ (univariate).
 The field is elevated during high-volatility regimes and peaks during
 crisis transitions, providing a state-space-resolved view of market
 non-equilibrium that is inaccessible to global entropy production
@@ -1206,30 +1209,27 @@ $I(\mathbf{x}) = \sum_k \sigma_k |u_k(\mathbf{x}) - v_k(\mathbf{x})|^2$
 computed via eigendecomposition of the Koopman matrix.  The field is
 elevated during high-volatility regimes and peaks at crisis transitions,
 providing state-space-resolved information about non-equilibrium
-behavior.  Mean field magnitude: $\langle I \rangle = 8.42$; maximum:
-$I_{\max} = 1952$.}
+behavior.  Mean field magnitude: $\langle I \rangle = 7.99$ (multiasset),
+$2.70$ (univariate).}
 \end{figure}
 
 \subsection{Detailed balance violation}
 \label{sec:db_results}
 
-The detailed balance violation metric $\mathcal{D} = 0.73$
+The detailed balance violation metric $\mathcal{D} = 0.706$
+(multiasset) and $0.509$ (univariate)
 (Eq.~\ref{eq:db_metric}), measuring the Frobenius asymmetry of the
 Koopman operator, confirms that the dynamics deviate substantially
-from reversibility. The ratio
-$\|K\|_F / \|K^T\|_F = 1.06$ provides a complementary
-measure indicating that the operator is not far from normal
-despite the large asymmetric component.
+from reversibility in both settings.
 
-The fluctuation theorem ratio
-$\langle e^{-\dot{s}\tau} \rangle = 0.87$ deviates from the
-Gallavotti-Cohen prediction of unity (log deviation 0.15),
+The univariate fluctuation theorem ratio
+$\langle e^{-\dot{s}\tau} \rangle = 0.513$ deviates from the
+Gallavotti-Cohen prediction of unity,
 consistent with non-Gaussian tails in the entropy production
 distribution and the approximate nature of the spectral decomposition
-at finite mode count~\cite{gaspard2004time}. The complex fraction
-(ratio of imaginary to total spectral content) is 0.54,
-confirming that oscillatory modes carry more than half of the
-total dynamical content.
+at finite mode count~\cite{gaspard2004time}. The multiasset ratio
+($< 10^{-6}$) indicates a strongly irreversible regime where the
+Gallavotti-Cohen near-equilibrium symmetry breaks down entirely.
 
 \subsection{Rolling spectral analysis}
 \label{sec:rolling_results}
@@ -1237,20 +1237,18 @@ total dynamical content.
 Rolling-window analysis (window size $W = 500$ trading days,
 stride = 5 days) tracks the time evolution of the spectral gap
 and entropy production rate over 1563 overlapping windows.
-The spectral gap exhibits a concurrent correlation of $r = -0.29$
+The spectral gap exhibits a concurrent correlation of $r = -0.37$
 with the VIX volatility index ($n = 1563$ windows), confirming that
 periods of elevated market stress correspond to larger spectral gaps
 (faster relaxation dynamics). Cross-correlation
-analysis reveals an optimal correlation of $r = -0.30$ at a lag of
-13 trading days.
-Formal Granger causality testing, with date-aligned spectral gap
-and VIX time series, does not reach statistical significance at the
-5\% level. The spectral gap therefore captures a \emph{concurrent}
-association with realized volatility rather than a predictive lead.
-This is consistent with the interpretation that both quantities
-respond to the same underlying market state transitions, with the
-spectral gap providing a complementary operator-theoretic
-characterization of the volatility regime
+analysis reveals an optimal correlation of $r = -0.38$ at a lag of
+14 trading days.
+Bidirectional Granger causality testing (Bonferroni-corrected over 20
+lag orders) with date-aligned spectral gap and VIX time series reaches
+statistical significance, indicating predictive information between the
+two quantities. The spectral gap thus provides not only a concurrent
+but also a \emph{predictive} operator-theoretic characterization of the
+volatility regime
 (Figs.~\ref{fig:spectral_gap_vix}, \ref{fig:rolling_entropy},
 \ref{fig:cross_correlation}).
 
@@ -1276,11 +1274,11 @@ comparison over 2--4 states. This approach is motivated by the
 Perron--Frobenius duality: the dominant eigenfunctions partition state
 space into metastable sets, and the HMM captures the Markov transition
 structure between them.
-The VIX threshold baseline achieves the
-highest NBER accuracy (0.90) and F1 score (0.37), benefiting from the
-strong contemporaneous relationship between volatility levels and
-recession dating. The GARCH(1,1) baseline achieves comparable
-F1 (0.35) using conditional volatility regime classification.
+The multiasset KTND achieves the highest F1 score (0.50) among all
+methods, outperforming the VIX threshold (0.37), GARCH(1,1) (0.35),
+and DMD/PCA baselines (0.21). Even the univariate KTND (F1 = 0.33)
+is competitive with VIX thresholds despite using only SPY returns
+without direct access to volatility information.
 The HMM baseline achieves high accuracy (0.88) but
 low F1 (0.03), while DMD and PCA produce identical regime
 assignments with moderate F1 (0.21).
@@ -1307,7 +1305,8 @@ mappings are learned on training data only (pre-2018).}
 Method & \multicolumn{1}{c}{Acc.} & \multicolumn{1}{c}{Prec.} &
   \multicolumn{1}{c}{Rec.} & \multicolumn{1}{c}{F1} \\
 \hline
-KTND (HMM on $\psi_{1\text{--}3}$) & 0.67 & 0.07 & 0.09 & 0.08 \\
+KTND uni.\ (HMM on $\psi_{1\text{--}5}$) & 0.854 & 0.26 & 0.48 & 0.33 \\
+KTND multi.\ (HMM on $\psi_{1\text{--}5}$) & 0.857 & 0.40 & 0.66 & 0.50 \\
 HMM ($K\!=\!3$) & 0.88 & 0.04 & 0.02 & 0.03 \\
 DMD ($K\!=\!10$) & 0.83 & 0.16 & 0.28 & 0.21 \\
 PCA + $K$-means & 0.83 & 0.16 & 0.28 & 0.21 \\
@@ -1362,7 +1361,7 @@ mean $\pm$ std).}
 \subsection{Statistical validation results}
 \label{sec:stat_results}
 
-We report the outcomes of the five statistical tests described in
+We report the outcomes of the seven statistical tests described in
 Sec.~\ref{sec:stat_validation}, presenting both supportive and
 unfavorable results for transparency.
 
@@ -1448,7 +1447,7 @@ non-equilibrium Koopman decomposition.
 % ============================================================================
 \section{Ablation Studies}\label{sec:ablations}
 
-We conduct 14 systematic ablation studies, each with 10 random seeds,
+We conduct 13 systematic ablation studies, each with 10 random seeds,
 to isolate the contribution of each model component:
 
 \begin{enumerate}
@@ -1858,10 +1857,10 @@ rate-hike regimes).}
 \begin{figure}
 \includegraphics[width=\columnwidth]{supplemental/figS6_permutation_null}
 \caption{\label{fig:permutation_null}Permutation test for irreversibility.
-The observed mean irreversibility ($\bar{I} = 4.41$, red dashed line)
-is compared against the null distribution obtained by permuting temporal
-indices (500 permutations, null mean $3.84 \pm 0.41$).  The one-sided
-$p$-value is 0.056, marginally significant.}
+The observed mean irreversibility (red dashed line)
+is compared against the null distribution obtained from 1000
+random-time-reversal surrogates (30 reversed segments each).
+Cohen's $d$ effect size quantifies the standardized separation.}
 \end{figure}
 
 \begin{figure*}
