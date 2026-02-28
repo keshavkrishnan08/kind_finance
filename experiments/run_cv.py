@@ -244,8 +244,9 @@ def train_fold(
     singular_values = out_val["singular_values"].cpu().numpy()
     vamp2 = float(np.sum(singular_values ** 2))
 
-    # Spectral gap
-    spectral_gap = float(KoopmanAnalyzer.compute_spectral_gap(eigenvalues, tau))
+    # Spectral gap (convert numpy -> tensor since compute_spectral_gap expects torch)
+    spectral_gap = float(KoopmanAnalyzer.compute_spectral_gap(
+        torch.as_tensor(eigenvalues), tau))
 
     # Complex eigenvalue fraction
     imag_parts = np.abs(eigenvalues.imag)

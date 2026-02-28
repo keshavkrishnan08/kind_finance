@@ -271,7 +271,11 @@ class NonEquilibriumVAMPNet(nn.Module):
 
         # --- 5. Complex eigendecomposition of K ---------------------------
         # K may be non-symmetric -> complex eigenvalues capture oscillations
-        eigenvalues = torch.linalg.eigvals(K)  # complex (d,)
+        try:
+            eigenvalues = torch.linalg.eigvals(K)  # complex (d,)
+        except RuntimeError:
+            # CUSOLVER can fail on GPU with ill-conditioned K; fall back to CPU
+            eigenvalues = torch.linalg.eigvals(K.cpu()).to(K.device)
 
         return {
             "chi_t": chi_t,
