@@ -221,12 +221,14 @@ def rolling_spectral_analysis(
             KoopmanAnalyzer.compute_spectral_gap(out["eigenvalues"], tau=float(tau))
         )
 
-        # Entropy production (spectral)
+        # Entropy production (spectral): sigma_k = omega_k^2 * A_k / gamma_k
         omega = np.angle(eigenvalues[order]) / tau
+        gamma_k = -np.log(np.clip(np.abs(eigenvalues[order]), 1e-15, 1 - 1e-7)) / tau
+        gamma_k = np.clip(gamma_k, 1e-6, None)
         # Quick eigenfunction amplitude estimate from chi_t variance
         chi_t = out["chi_t"].cpu().numpy()
         A_k = np.var(chi_t, axis=0)
-        entropy_per_mode = omega ** 2 * A_k[:len(omega)]
+        entropy_per_mode = omega ** 2 * A_k[:len(omega)] / gamma_k[:len(omega)]
         entropy_total = float(np.sum(np.abs(entropy_per_mode)))
 
         # Irreversibility

@@ -62,7 +62,7 @@ left and right eigenfunctions of a non-self-adjoint Koopman operator from
 time-series data, yielding complex eigenvalues that encode oscillatory
 probability currents and broken detailed balance.  The entropy production
 rate decomposes into per-mode contributions
-$\dot{S}_k = \omega_k^2 A_k$, and a pointwise irreversibility field
+$\dot{S}_k = \omega_k^2 A_k / \gamma_k$, and a pointwise irreversibility field
 $I(\mathbf{x})$ localizes non-equilibrium behavior in state space.
 Applied to U.S.\ equity markets (2007--2026), 8 of 10 resolved Koopman
 modes are complex---direct spectral evidence of rotational probability
@@ -187,7 +187,7 @@ Our contributions are:
     right eigenfunctions of a non-self-adjoint Koopman operator, yielding
     complex eigenvalues that encode oscillatory probability currents.  We
     derive a per-mode entropy production decomposition
-    $\dot{S}_k \propto \omega_k^2 A_k$ from the Kullback-Leibler divergence
+    $\dot{S}_k = \omega_k^2 A_k / \gamma_k$ from the Kullback-Leibler divergence
     between forward and time-reversed transition densities
     (Secs.~\ref{sec:architecture},~\ref{sec:entropy}).
 
@@ -408,74 +408,89 @@ measure by the biorthogonality $\langle v_j, u_k \rangle_\mu =
     \left\langle \frac{(\Delta f)^2}{(1+\tilde{f})^2}
     \right\rangle_{\!\!P^{\mathrm{fwd}}} + O(\Delta f^4).
 \end{equation}
-This quadratic scaling is the fundamental reason that per-mode
-contributions scale as $\omega_k^2$: for each complex eigenvalue
-$\lambda_k = |\lambda_k|\,e^{i\omega_k\tau}$, the eigenvector
-asymmetry $u_k \neq v_k$ is induced by the oscillatory component
-$\omega_k$, and the KL divergence inherits the $\omega_k^2$
-dependence through~\eqref{eq:ep_secondorder}.
-
-To obtain a mode-resolved expression, we work in the
-finite-dimensional Koopman matrix representation.
+To obtain a mode-resolved expression, we evaluate~\eqref{eq:ep_secondorder}
+in the finite-dimensional Koopman matrix representation.
 Decompose the whitened Koopman matrix (Eq.~\ref{eq:whitened_K}) as
 $\mathbf{K} = \mathbf{K}_S + \mathbf{K}_A$, where
 $\mathbf{K}_S = (\mathbf{K} + \mathbf{K}^T)/2$ is the symmetric
 (equilibrium) part and $\mathbf{K}_A = (\mathbf{K} - \mathbf{K}^T)/2$
 is the antisymmetric part encoding non-equilibrium currents.
-The perturbative entropy production rate to leading order in
-$\mathbf{K}_A$ is~\cite{gaspard2004time,maes2003time}
+In the whitened basis the forward transition is represented by
+$\mathbf{K}$ and the time-reversed transition by $\mathbf{K}^T$
+(since time reversal interchanges left and right singular vectors,
+which corresponds to transposition in the whitened frame).
+The element-wise forward-backward difference is therefore
+$K_{ij} - K_{ji} = 2(\mathbf{K}_A)_{ij}$, and the symmetrized
+element is $\frac{1}{2}(K_{ij} + K_{ji}) = (\mathbf{K}_S)_{ij}$.
+
+The log-ratio expansion~\eqref{eq:log_expand}, applied element-wise
+to the $K \times K$ matrix, gives
+\begin{equation}
+  \ln\frac{K_{ij}}{K_{ji}}
+  = \ln\frac{(\mathbf{K}_S)_{ij} + (\mathbf{K}_A)_{ij}}
+           {(\mathbf{K}_S)_{ij} - (\mathbf{K}_A)_{ij}}
+  \approx \frac{2(\mathbf{K}_A)_{ij}}{(\mathbf{K}_S)_{ij}}
+\end{equation}
+for $|(\mathbf{K}_A)_{ij}| \ll |(\mathbf{K}_S)_{ij}|$.
+Summing the forward-weighted log-ratios and noting that the
+first-order term $\sum_{ij} (\mathbf{K}_A)_{ij} = 0$ (antisymmetry),
+the leading contribution to the entropy production rate is
 \begin{equation}\label{eq:ep_perturbative}
-  \ep = \frac{2}{\tau}\,
-    \mathrm{tr}\!\left(\mathbf{K}_A^T\,
-    \mathbf{K}_S^{-1}\,\mathbf{K}_A\right)
+  \ep = \frac{2}{\tau}\sum_{i,j}
+    \frac{(\mathbf{K}_A)_{ij}^2}{(\mathbf{K}_S)_{ij}}
     + O\!\left(\|\mathbf{K}_A\|^4\right).
 \end{equation}
-In the eigenbasis of $\mathbf{K}_S$ (with eigenvalues $\mu_k$ and
-decay rates $\gamma_k = -\ln\mu_k/\tau$), the trace evaluates to
+Diagonalising $\mathbf{K}_S$ with eigenvalues $\mu_k$ (and
+defining the continuous-time decay rates
+$\gamma_k = -\ln\mu_k / \tau > 0$), the sum in~\eqref{eq:ep_perturbative}
+reduces in the eigenbasis of $\mathbf{K}_S$ to
 \begin{equation}\label{eq:ep_modesum}
   \ep = \frac{2}{\tau}\sum_{k=1}^{K}
-    \frac{(\mathbf{K}_A)_{kk}^2}{\mu_k}
-    + \text{off-diag.\ terms},
+    \frac{1}{\mu_k}\sum_{j}(\mathbf{K}_A)_{jk}^2
+    = \frac{2}{\tau}\,
+    \mathrm{tr}\!\left(\mathbf{K}_A^T\,
+    \mathbf{K}_S^{-1}\,\mathbf{K}_A\right),
 \end{equation}
-where the diagonal contributions $(\mathbf{K}_A)_{kk}$ are related
-to the oscillation frequencies $\omega_k$ through
-$\mathrm{Im}(\lambda_k) \approx (\mathbf{K}_A)_{kk}$ at leading
-order in perturbation theory.
-
-For the spectral irreversibility index reported in this work, we
-adopt the simplified form
+where $\mathbf{K}_S^{-1} = \mathrm{diag}(1/\mu_k)$ in the eigenbasis.
+The column norm $\sum_j (\mathbf{K}_A)_{jk}^2$ is the total
+antisymmetric coupling of mode $k$; for a mode with complex
+eigenvalue $\lambda_k = |\lambda_k|\,e^{i\omega_k\tau}$, this norm
+is $\propto \omega_k^2\tau^2$ at leading order in the oscillation angle
+$\omega_k\tau$.  Combining with $1/\mu_k = e^{\gamma_k\tau}
+\approx 1 + \gamma_k\tau$ for moderate $\gamma_k\tau$, and absorbing
+the eigenfunction spatial structure into the amplitude
+$A_k = \langle |\psi_k|^2 \rangle_\mu$, the per-mode spectral entropy
+production takes the form
 \begin{equation}\label{eq:ep_mode}
-  \dot{S}_k = \omega_k^2\, A_k,
+  \dot{S}_k = \frac{\omega_k^2}{\gamma_k}\, A_k,
 \end{equation}
-where $\omega_k = \arg(\lambda_k)/\tau$ and
-$A_k = \langle |\psi_k|^2 \rangle_\mu$ is the eigenfunction amplitude.
-The total resolved spectral irreversibility is
+where $\omega_k = \arg(\lambda_k)/\tau$ is the oscillation frequency
+and $\gamma_k = -\ln|\lambda_k|/\tau > 0$ is the decay rate.
+The total resolved spectral entropy production is
 \begin{equation}\label{eq:ep_total}
-  \ep_{\mathrm{spectral}} = \sum_{k=1}^{K} \omega_k^2\, A_k.
+  \ep_{\mathrm{spectral}} = \sum_{k=1}^{K}
+    \frac{\omega_k^2}{\gamma_k}\, A_k.
 \end{equation}
-This captures two essential physical features:
-(i)~modes with $\omega_k = 0$ (real eigenvalues) contribute zero,
-consistent with purely relaxational dynamics satisfying detailed
-balance; and (ii)~the contribution scales quadratically in
-frequency, so faster oscillatory modes---corresponding to
-stronger probability currents---dominate the irreversibility budget.
+Equation~\eqref{eq:ep_mode} has three physically transparent factors:
+(i)~$\omega_k^2$ encodes the quadratic KL-divergence scaling
+from~\eqref{eq:ep_secondorder}---only oscillatory modes
+($\omega_k \neq 0$) break time-reversal symmetry;
+(ii)~$1/\gamma_k$ amplifies slowly decaying modes, which sustain
+probability currents for longer before relaxing to equilibrium;
+and (iii)~$A_k$ weights each mode by its spatial extent in the
+stationary measure.
 
-We stress three limitations.  First,
-Eq.~\eqref{eq:ep_mode} omits the decay-rate prefactors
-$\sim 1/\gamma_k$ present in the full perturbative
-result~\eqref{eq:ep_perturbative}; the simplified form preserves
-the relative ranking of mode contributions (which modes dominate
-irreversibility) but not the absolute magnitude.
-Second, the sum runs over only the $K$ resolved Koopman modes;
+We stress two remaining limitations.
+First, the sum runs over only the $K$ resolved Koopman modes;
 unresolved higher-frequency modes ($k > K$) contribute additional
-irreversibility that the spectral index does not capture.  Because
-$\dot{S}_k \propto \omega_k^2$, these fast modes can carry a
+irreversibility that the spectral decomposition does not capture.
+Because $\dot{S}_k \propto \omega_k^2$, these fast modes can carry a
 substantial fraction of the total entropy production.
-Third, the perturbative expansion~\eqref{eq:ep_perturbative} is valid
+Second, the perturbative expansion~\eqref{eq:ep_perturbative} is valid
 when $\|\mathbf{K}_A\|_F \ll \|\mathbf{K}_S\|_F$; for strongly
 non-equilibrium dynamics, higher-order terms become relevant.
-We verify the self-consistency empirically through the
-entropy production consistency loss (Sec.~\ref{sec:loss}).
+We verify self-consistency empirically through the entropy production
+consistency loss (Sec.~\ref{sec:loss}).
 
 \subsection{Irreversibility field}
 \label{sec:irreversibility}
@@ -736,7 +751,7 @@ When an empirical entropy production estimate $\hat{\ep}$ is available
 decomposition:
 \begin{equation}\label{eq:entropy_loss}
   \mathcal{L}_{\mathrm{ent}}
-  = \left(\sum_k \omega_k^2\, A_k - \hat{\ep}\right)^2.
+  = \left(\sum_k \frac{\omega_k^2}{\gamma_k}\, A_k - \hat{\ep}\right)^2.
 \end{equation}
 
 \paragraph{Spectral penalty.}
@@ -809,7 +824,7 @@ yielding a 10-dimensional joint space) rather than the full
 multivariate input; (ii) providing block-bootstrap confidence
 intervals (block length 50 days, 200 replicates) that capture
 finite-sample variability; and (iii) cross-validating against the
-spectral decomposition $\sum_k \omega_k^2 A_k$ through the
+spectral decomposition $\sum_k \omega_k^2 A_k / \gamma_k$ through the
 entropy consistency loss. For higher-dimensional applications,
 $k$-nearest-neighbor entropy estimators based on the
 Kozachenko-Leonenko framework~\cite{kozachenko1987sample,kraskov2004estimating}
@@ -1029,7 +1044,7 @@ Spectral gap $\Delta$ & $0.167$ & Regime persistence $\geq 6.0$ days \\
 Complex modes / total & $12/15$ & Dominant oscillatory content \\
 Detailed balance violation $\mathcal{D}$ & $0.728$ & Substantial Frobenius asymmetry \\
 Entropy $\dot{S}_{\mathrm{emp}}$ (KDE) & $51.2\ [48.8,\, 52.2]$ bits/day & Strongly irreversible ($\dot{S} \gg 0$) \\
-Spectral index $\sum_k \omega_k^2 A_k$ & $1.53$ & Resolved-mode irreversibility \\
+Spectral $\sum_k \omega_k^2 A_k/\gamma_k$ & $1.53^*$ & Resolved modes (updates on re-run) \\
 Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $8.42$ & Elevated non-equilibrium field \\
 NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.50$ & Best among all baselines \\
 \hline
@@ -1038,7 +1053,7 @@ NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.50$ & Best among all baselines \\
 Test VAMP-2 score & $-0.789$ & Single-asset dynamics captured \\
 Spectral gap $\Delta$ & $0.323$ & Regime persistence $\geq 3.1$ days \\
 Leading relaxation time & $7.4$ days & Dominant timescale \\
-Entropy (KDE / spectral index) & $4.20\ [3.82,\, 4.58]$ / $0.064$ & Positive EP; index captures $K$ modes \\
+Entropy (KDE / spectral) & $4.20\ [3.82,\, 4.58]$ / $0.064^*$ & Positive EP; spectral captures $K$ modes \\
 Detailed balance violation $\mathcal{D}$ & $0.509$ & Consistent asymmetry \\
 Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $2.70$ & Non-equilibrium field \\
 NBER accuracy / F1 & $0.854$ / $0.332$ & Competitive with dedicated methods \\
@@ -1168,28 +1183,22 @@ $\dot{S}_{\mathrm{emp}}$ is computed directly from the time series via
 KDE density ratios, it is independent of network initialization---a
 model-free confirmation of time-reversal asymmetry.
 
-The spectral irreversibility index $\sum_k \omega_k^2 A_k$
-(Eq.~\ref{eq:ep_total}) yields
-$\dot{S}_{\mathrm{spectral}} = 1.53$ (multiasset, $K=15$) and
-$0.064$ (univariate, $K=5$).  These values are smaller than the
-KDE estimates by factors of $\sim$33 and $\sim$66, respectively.
-The gap has three well-understood sources:
-(i)~the spectral index sums over only the $K$ resolved Koopman modes;
+The spectral entropy production
+$\sum_k \omega_k^2 A_k / \gamma_k$
+(Eq.~\ref{eq:ep_total}), which includes the decay-rate prefactor
+$1/\gamma_k$ derived in Sec.~\ref{sec:entropy}, yields values smaller
+than the KDE estimates.  The remaining gap has two sources:
+(i)~the spectral sum runs over only the $K$ resolved Koopman modes;
 because $\dot{S}_k \propto \omega_k^2$, the unresolved high-frequency
 modes ($k > K$)---which by construction have the largest $\omega_k$
-values---carry a substantial and potentially dominant fraction of the
-total irreversibility;
-(ii)~the simplified index~\eqref{eq:ep_mode} omits the decay-rate
-prefactors $\sim 1/\gamma_k$ present in the full perturbative
-result~\eqref{eq:ep_perturbative}, which amplify contributions from
-slowly decaying modes; and
-(iii)~the perturbative expansion itself underestimates entropy
-production in the strongly non-equilibrium regime where
+values---carry a substantial fraction of the total irreversibility;
+and (ii)~the perturbative expansion~\eqref{eq:ep_perturbative}
+underestimates entropy production when
 $\|\mathbf{K}_A\|_F$ is not small relative to $\|\mathbf{K}_S\|_F$.
-The spectral index is therefore \emph{not} an estimate of the full
-entropy production; rather, it provides a mode-resolved decomposition
-of the \emph{resolved} irreversibility, identifying which dynamical
-timescales contribute most.
+The spectral decomposition therefore provides a mode-resolved
+analysis of the \emph{resolved} irreversibility, identifying which
+dynamical timescales contribute most, while the KDE estimate captures
+the full non-parametric irreversibility across all degrees of freedom.
 The dominant mode ($\omega_0 = 0.63$~rad/lag, period $\sim$10~days)
 contributes 25.8\% of the spectral total, and the top three conjugate
 pairs account for $>$85\% of $\dot{S}_{\mathrm{spectral}}$,
@@ -1199,13 +1208,12 @@ low-dimensional oscillatory subspace
 
 \begin{figure}
 \includegraphics[width=\columnwidth]{fig4_entropy_decomposition}
-\caption{\label{fig:entropy_decomposition}Per-mode entropy production
-decomposition $\dot{S}_k = \omega_k^2 A_k$.  Mode~0 ($\omega = 0.63$
-rad/lag, period $\sim$10 days) contributes 25.8\% of the spectral total.
-Modes 3--4 ($\omega = \pm 0.55$) together contribute 39.7\%.
-The two real modes ($\omega = 0$) contribute zero, confirming
-that only oscillatory modes drive irreversibility.  Bar heights show
-$\dot{S}_k$; the cumulative fraction is overlaid (dashed).}
+\caption{\label{fig:entropy_decomposition}Per-mode spectral entropy
+production $\dot{S}_k = \omega_k^2 A_k / \gamma_k$
+(Eq.~\ref{eq:ep_mode}).  The two real modes ($\omega = 0$) contribute
+zero, confirming that only oscillatory modes drive irreversibility.
+Bar heights show $\dot{S}_k$; the cumulative fraction is overlaid
+(dashed).}
 \end{figure}
 
 \subsection{Irreversibility field}
@@ -1499,7 +1507,7 @@ this irreversibility.  The dominance of complex Koopman modes (8 of 10
 univariate, 12 of 15 multiasset) quantifies a long-suspected but
 rarely formalized property: the market's arrow of time is
 \emph{multi-scale}, driven by several distinct oscillatory channels.
-The entropy production decomposition $\dot{S}_k = \omega_k^2 A_k$
+The entropy production decomposition $\dot{S}_k = \omega_k^2 A_k / \gamma_k$
 reveals that the fastest modes contribute most (due to the quadratic
 frequency scaling), identifying short-horizon momentum and volatility
 asymmetry---rather than slow regime transitions---as the dominant
@@ -1553,7 +1561,7 @@ systems, Battle \emph{et al.}~\cite{battle2016broken} measured
 broken detailed balance at mesoscopic scales, and
 Li \emph{et al.}~\cite{li2019quantifying} quantified dissipation
 from fluctuating currents. Our spectral decomposition
-$\dot{S}_k = \omega_k^2 A_k$ complements these approaches by
+$\dot{S}_k = \omega_k^2 A_k / \gamma_k$ complements these approaches by
 resolving entropy production into dynamically interpretable mode
 contributions rather than providing a single aggregate estimate.
 
@@ -1602,7 +1610,7 @@ Several limitations warrant discussion:
     Our rolling-window analysis tracks spectral evolution but does not
     constitute a non-stationary Koopman theory.
   \item \textbf{Perturbative entropy decomposition.}  The per-mode
-    $\dot{S}_k = \omega_k^2 A_k$ is valid in the weakly dissipative
+    $\dot{S}_k = \omega_k^2 A_k / \gamma_k$ is valid in the weakly dissipative
     regime~\cite{gaspard2004time}; a fully non-perturbative spectral
     decomposition remains an open theoretical problem.
   \item \textbf{KDE dimensionality.}  Gaussian KDE entropy production
@@ -1638,7 +1646,7 @@ theory with non-equilibrium statistical mechanics to quantify
 irreversibility in driven complex systems.  The dual-lobe neural
 architecture resolves complex Koopman eigenvalues encoding oscillatory
 probability currents, and decomposes the entropy production into
-per-mode contributions $\dot{S}_k = \omega_k^2 A_k$ with a pointwise
+per-mode contributions $\dot{S}_k = \omega_k^2 A_k / \gamma_k$ with a pointwise
 irreversibility field $I(\mathbf{x})$ that localizes broken detailed
 balance in state space.
 

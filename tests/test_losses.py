@@ -181,9 +181,10 @@ class TestEntropyConsistencyLoss:
         amplitudes = torch.ones(4)
         tau = 1.0
 
-        # Compute sigma_spectral manually
+        # Compute sigma_spectral manually: omega^2 * A_k / gamma_k
         omega = angles / tau
-        sigma_target = (omega.pow(2) * amplitudes).sum()
+        gamma = (-torch.log(magnitudes.clamp(min=1e-12, max=1.0 - 1e-7)) / tau).clamp(min=1e-6)
+        sigma_target = (omega.pow(2) * amplitudes / gamma).sum()
 
         loss = entropy_production_consistency_loss(
             eigenvalues, amplitudes, tau, sigma_target
