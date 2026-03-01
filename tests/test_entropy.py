@@ -55,7 +55,9 @@ def compute_entropy_production(
         ``cumulative_frac``   -- cumulative fraction sum_k(sigma_k) / sigma_total.
     """
     omega = torch.angle(eigenvalues) / tau  # angular frequency per mode
-    sigma_modes = omega.pow(2) * amplitudes  # per-mode contribution
+    magnitudes = eigenvalues.abs().float().clamp(min=1e-12, max=1.0 - 1e-7)
+    gamma = (-torch.log(magnitudes) / tau).clamp(min=1e-6)
+    sigma_modes = omega.pow(2) * amplitudes / gamma  # per-mode contribution
 
     sigma_total = sigma_modes.sum()
 

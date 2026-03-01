@@ -302,11 +302,18 @@ class EntropyDecomposer:
     Given the Koopman eigenvalues lambda_k and the eigenfunctions psi_k
     evaluated at data points, each mode contributes
 
-        sigma_k = |omega_k|^2 * A_k
+        sigma_k = omega_k^2 * A_k / gamma_k
 
     where
         omega_k = angle(lambda_k) / tau    (angular frequency)
+        gamma_k = -ln|lambda_k| / tau      (decay rate, > 0)
         A_k     = mean(|psi_k|^2)          (mean squared amplitude)
+
+    The 1/gamma_k prefactor follows from the perturbative expansion of the
+    KL divergence between forward and time-reversed transition densities
+    (Gaspard, J. Stat. Phys. 117, 599, 2004): slowly decaying modes
+    sustain probability currents longer, accumulating more entropy production
+    per unit time.
 
     The total spectral entropy production is  sum_k sigma_k.
 
@@ -355,14 +362,19 @@ class EntropyDecomposer:
         # Angular frequencies
         omega = torch.angle(eigenvalues).float() / self.tau  # (d,)
 
+        # Decay rates: gamma_k = -ln|lambda_k| / tau  (> 0 for |lambda| < 1)
+        magnitudes = eigenvalues.abs().float().clamp(min=1e-12, max=1.0 - 1e-7)
+        gamma = -torch.log(magnitudes) / self.tau  # (d,)
+        gamma = gamma.clamp(min=1e-6)  # avoid division by zero
+
         # Mean squared amplitudes
         if eigenfunctions.is_complex():
             amplitudes = eigenfunctions.abs().pow(2).mean(dim=0).float()  # (d,)
         else:
             amplitudes = eigenfunctions.pow(2).mean(dim=0).float()  # (d,)
 
-        # Per-mode entropy production
-        mode_contributions = omega.pow(2) * amplitudes  # (d,)
+        # Per-mode entropy production: sigma_k = omega_k^2 * A_k / gamma_k
+        mode_contributions = omega.pow(2) * amplitudes / gamma  # (d,)
 
         # Total
         total = mode_contributions.sum()
@@ -377,6 +389,7 @@ class EntropyDecomposer:
         return {
             "mode_contributions": mode_contributions,
             "frequencies": omega,
+            "decay_rates": gamma,
             "amplitudes": amplitudes,
             "total": total,
             "cumulative_fraction": cumulative_fraction,

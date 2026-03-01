@@ -71,9 +71,9 @@ def entropy_production_consistency_loss(
     """Consistency between spectral entropy production and an empirical estimate.
 
     The spectral entropy production rate is
-        sigma_spectral = sum_k omega_k^2 * A_k
-    where omega_k = angle(lambda_k) / tau  and  A_k is the mean squared
-    amplitude of the k-th eigenfunction.
+        sigma_spectral = sum_k omega_k^2 * A_k / gamma_k
+    where omega_k = angle(lambda_k) / tau, gamma_k = -ln|lambda_k| / tau,
+    and A_k is the mean squared amplitude of the k-th eigenfunction.
 
     This loss penalises the squared deviation from an externally
     supplied empirical entropy-production rate.
@@ -96,9 +96,10 @@ def entropy_production_consistency_loss(
     Tensor, scalar
         Squared difference.
     """
-    # omega_k = arg(lambda_k) / tau  (angular frequency of each mode)
-    omega = torch.angle(eigenvalues) / tau  # real (d,)
-    sigma_spectral = (omega.pow(2) * eigenfunc_amplitudes).sum()
+    omega = torch.angle(eigenvalues) / tau  # (d,)
+    magnitudes = eigenvalues.abs().float().clamp(min=1e-12, max=1.0 - 1e-7)
+    gamma = (-torch.log(magnitudes) / tau).clamp(min=1e-6)  # (d,)
+    sigma_spectral = (omega.pow(2) * eigenfunc_amplitudes / gamma).sum()
     return (sigma_spectral - sigma_empirical).pow(2)
 
 

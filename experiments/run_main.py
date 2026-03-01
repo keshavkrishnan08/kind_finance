@@ -508,16 +508,20 @@ def post_training_analysis(
     magnitudes = np.abs(eigenvalues_sorted)
 
     # --- Entropy decomposition ---
-    # Spectral entropy production: sigma_k = omega_k^2 * A_k
+    # Spectral entropy production: sigma_k = omega_k^2 * A_k / gamma_k
+    # omega_k = arg(lambda_k) / tau   (oscillation frequency)
+    # gamma_k = -ln|lambda_k| / tau   (decay rate)
     # A_k = <u_k * v_k> (bilinear product of right/left eigenfunctions)
     omega = np.angle(eigenvalues_sorted) / tau
+    gamma_k = -np.log(np.clip(np.abs(eigenvalues_sorted), 1e-15, 1 - 1e-7)) / tau
+    gamma_k = np.clip(gamma_k, 1e-6, None)  # avoid division by zero
     A_k_full = np.mean(u_np * v_np, axis=0)  # bilinear amplitude per mode
     # Reorder A_k to match eigenvalue ordering
     if len(A_k_full) == len(order):
         A_k = np.abs(A_k_full[order])
     else:
         A_k = np.abs(A_k_full[:len(omega)])
-    entropy_per_mode = omega ** 2 * A_k
+    entropy_per_mode = omega ** 2 * A_k / gamma_k
 
     entropy_total = float(np.sum(np.abs(entropy_per_mode)))
 
@@ -536,6 +540,7 @@ def post_training_analysis(
     entropy_df = pd.DataFrame({
         "mode": np.arange(len(entropy_per_mode)),
         "frequency_omega": omega,
+        "decay_rate_gamma": gamma_k,
         "amplitude_A_k": A_k,
         "entropy_production": np.abs(entropy_per_mode),
         "entropy_fraction": np.abs(entropy_per_mode) / max(entropy_total, 1e-15),
