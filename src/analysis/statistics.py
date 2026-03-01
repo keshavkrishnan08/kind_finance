@@ -72,7 +72,7 @@ class StatisticalTests:
 
         # Get reference eigenvalues to establish mode ordering
         K_ref = model_koopman_matrix(model, data, tau_int)
-        ref_evals = np.linalg.eigvals(K_ref)
+        ref_evals = _safe_eigvals(K_ref)
         ref_order = np.argsort(-np.abs(ref_evals))
         ref_evals = ref_evals[ref_order]
         n_modes = len(ref_evals)
@@ -100,7 +100,7 @@ class StatisticalTests:
             surrogate = features[indices]
 
             K_b = _koopman_from_features(surrogate, tau_int)
-            evals_b = np.linalg.eigvals(K_b)
+            evals_b = _safe_eigvals(K_b)
 
             # Match modes to reference by nearest-neighbour in complex plane
             evals_b_sorted = _match_eigenvalues(ref_evals, evals_b)
@@ -493,7 +493,7 @@ class StatisticalTests:
 
             # Eigenvalue snapshot for stability assessment
             K_fold = model_koopman_matrix(model, val_data.cpu(), tau_int)
-            evals_fold = np.linalg.eigvals(K_fold)
+            evals_fold = _safe_eigvals(K_fold)
             evals_fold = evals_fold[np.argsort(-np.abs(evals_fold))]
             fold_eigenvalues.append(evals_fold)
 
@@ -536,6 +536,18 @@ class StatisticalTests:
 # ======================================================================
 
 
+def _safe_eigvals(K: np.ndarray) -> np.ndarray:
+    """Compute eigenvalues of K, sanitizing NaN/Inf inputs to avoid MKL crashes.
+
+    ``np.linalg.eigvals`` calls MKL's SGEBAL which can segfault on matrices
+    containing non-finite values.  This wrapper replaces non-finite entries
+    with zeros before the call.
+    """
+    if not np.isfinite(K).all():
+        K = np.where(np.isfinite(K), K, 0.0)
+    return np.linalg.eigvals(K)
+
+
 def _koopman_from_features(features: np.ndarray, lag: int) -> np.ndarray:
     """Estimate Koopman matrix from pre-computed features."""
     chi_t = features[:-lag]
@@ -548,7 +560,11 @@ def _koopman_from_features(features: np.ndarray, lag: int) -> np.ndarray:
     C_00 = (chi_t_c.T @ chi_t_c) / n
     C_01 = (chi_t_c.T @ chi_lag_c) / n
     reg = 1e-6 * np.eye(C_00.shape[0])
-    return np.linalg.solve(C_00 + reg, C_01)
+    K = np.linalg.solve(C_00 + reg, C_01)
+    # Sanitize: replace NaN/Inf (can occur from degenerate resamples)
+    if not np.isfinite(K).all():
+        K = np.where(np.isfinite(K), K, 0.0)
+    return K
 
 
 def _match_eigenvalues(

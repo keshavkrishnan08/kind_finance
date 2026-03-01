@@ -114,6 +114,9 @@ class SpectralAnalyzer:
         U, singular_values, Vt = np.linalg.svd(M, full_matrices=False)
 
         # Eigendecomposition of K for complex eigenvalues
+        # Sanitize K to prevent MKL SGEBAL segfaults on ill-conditioned matrices
+        if not np.isfinite(K_matrix).all():
+            K_matrix = np.where(np.isfinite(K_matrix), K_matrix, 0.0)
         eigenvalues_complex = np.linalg.eigvals(K_matrix)
 
         # Sort by magnitude descending

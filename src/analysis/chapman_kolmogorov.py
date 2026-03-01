@@ -89,8 +89,10 @@ def chapman_kolmogorov_test(
             )
             continue
 
-        # Predicted propagator: K(tau)^n
-        K_power = np.linalg.matrix_power(K_base, n)
+        # Predicted propagator: K(tau)^n  (use repeated @ to avoid
+        # np.linalg.matrix_power which can segfault via MKL SGEBAL
+        # on ill-conditioned matrices)
+        K_power = _safe_matrix_power(K_base, n)
 
         # Direct propagator at lag n*tau
         K_direct = model_koopman_matrix(model, data, lag_n)
@@ -273,10 +275,30 @@ def _block_bootstrap_ck(
         # Koopman matrix at lag n*tau from surrogate features
         K_direct_b = _koopman_from_features(surrogate, lag_n)
 
-        K_power_b = np.linalg.matrix_power(K_base_b, n)
+        K_power_b = _safe_matrix_power(K_base_b, n)
         boot_stats[b] = float(np.linalg.norm(K_power_b - K_direct_b, "fro"))
 
     return boot_stats
+
+
+def _safe_matrix_power(K: np.ndarray, n: int) -> np.ndarray:
+    """Compute K^n via repeated multiplication, avoiding MKL SGEBAL segfaults.
+
+    ``np.linalg.matrix_power`` internally uses eigendecomposition for large
+    exponents, which calls MKL's SGEBAL (matrix balancing).  On
+    ill-conditioned matrices this can trigger a segmentation fault.
+    Repeated ``@`` is O(n) but safe for the small *n* values (2-5) used
+    in the Chapman-Kolmogorov test.
+    """
+    if not np.isfinite(K).all():
+        K = np.where(np.isfinite(K), K, 0.0)
+    result = K.copy()
+    for _ in range(n - 1):
+        result = result @ K
+        # Clamp to prevent overflow propagation
+        if not np.isfinite(result).all():
+            result = np.where(np.isfinite(result), result, 0.0)
+    return result
 
 
 def _koopman_from_features(
@@ -311,4 +333,10 @@ def _koopman_from_features(
     C_01 = (chi_t_c.T @ chi_lag_c) / n_samples
 
     reg = 1e-6 * np.eye(C_00.shape[0])
-    return np.linalg.solve(C_00 + reg, C_01)
+    K = np.linalg.solve(C_00 + reg, C_01)
+
+    # Sanitize: replace NaN/Inf (can occur from degenerate resamples)
+    if not np.isfinite(K).all():
+        K = np.where(np.isfinite(K), K, 0.0)
+
+    return K

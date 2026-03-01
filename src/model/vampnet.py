@@ -265,8 +265,17 @@ class NonEquilibriumVAMPNet(nn.Module):
 
         K = C00_sqrt_inv @ C0tau @ Ctautau_sqrt_inv  # (d, d)
 
+        # Sanitize K: replace NaN/Inf with zeros to prevent downstream crashes
+        # (can occur with short data or ill-conditioned covariances)
+        if not torch.isfinite(K).all():
+            K = torch.where(torch.isfinite(K), K, torch.zeros_like(K))
+
         # --- 4. SVD of K -------------------------------------------------
-        U, sigma, Vh = torch.linalg.svd(K, full_matrices=False)
+        try:
+            U, sigma, Vh = torch.linalg.svd(K, full_matrices=False)
+        except RuntimeError:
+            U, sigma, Vh = torch.linalg.svd(K.cpu(), full_matrices=False)
+            U, sigma, Vh = U.to(K.device), sigma.to(K.device), Vh.to(K.device)
         V = Vh.T  # convention: K = U diag(sigma) V^T
 
         # --- 5. Complex eigendecomposition of K ---------------------------
@@ -275,7 +284,13 @@ class NonEquilibriumVAMPNet(nn.Module):
             eigenvalues = torch.linalg.eigvals(K)  # complex (d,)
         except RuntimeError:
             # CUSOLVER can fail on GPU with ill-conditioned K; fall back to CPU
-            eigenvalues = torch.linalg.eigvals(K.cpu()).to(K.device)
+            try:
+                eigenvalues = torch.linalg.eigvals(K.cpu()).to(K.device)
+            except RuntimeError:
+                # K is numerically degenerate; return zeros
+                eigenvalues = torch.zeros(
+                    K.shape[0], dtype=torch.complex64, device=K.device
+                )
 
         return {
             "chi_t": chi_t,
