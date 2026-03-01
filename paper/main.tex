@@ -19,6 +19,8 @@
 \usepackage{dcolumn}
 \usepackage{natbib}
 \usepackage{physics}
+\usepackage{amsthm}
+\newtheorem{proposition}{Proposition}
 
 % ---- Graphics path ----
 \graphicspath{{../outputs/figures/}}
@@ -180,34 +182,29 @@ framework purpose-built for \emph{non-reversible} financial market dynamics.
 Our contributions are:
 
 \begin{enumerate}
-  \item \textbf{Non-equilibrium VAMPNet architecture.} We employ two
-    independent encoder lobes $\chi_t$ and $\chi_\tau$ whose parameter
-    asymmetry detects broken detailed balance. When the dynamics are
-    reversible, weight sharing is recovered as a special case
-    (Sec.~\ref{sec:architecture}).
+  \item \textbf{Non-equilibrium Koopman framework.}  A dual-lobe neural
+    architecture with independent encoder parameters learns the left and
+    right eigenfunctions of a non-self-adjoint Koopman operator, yielding
+    complex eigenvalues that encode oscillatory probability currents.  We
+    derive a per-mode entropy production decomposition
+    $\dot{S}_k \propto \omega_k^2 A_k$ from the Kullback-Leibler divergence
+    between forward and time-reversed transition densities
+    (Secs.~\ref{sec:architecture},~\ref{sec:entropy}).
 
-  \item \textbf{Spectral entropy production decomposition.} We decompose the
-    total entropy production rate into per-mode contributions
-    $\dot{S}_k = \omega_k^2 A_k$, directly linking each Koopman eigenvalue's
-    oscillatory frequency $\omega_k$ to its thermodynamic cost
-    (Sec.~\ref{sec:entropy}).
-
-  \item \textbf{Irreversibility field.} We construct a pointwise diagnostic
+  \item \textbf{Pointwise irreversibility diagnostic.}  We construct an
+    irreversibility field
     $I(\mathbf{x}) = \sum_k \sigma_k |u_k(\mathbf{x}) - v_k(\mathbf{x})|^2$
-    that localizes broken detailed balance in the market state space, enabling
-    identification of regimes where non-equilibrium effects are strongest
+    and prove that $I(\mathbf{x}) = 0$ if and only if the projected
+    dynamics satisfy detailed balance, providing state-space-resolved
+    information about non-equilibrium behavior that is inaccessible to
+    global entropy production estimates
     (Sec.~\ref{sec:irreversibility}).
 
-  \item \textbf{Regime persistence bound.} The spectral gap $\Delta$ of the
-    learned Koopman operator yields a rigorous lower bound on regime
-    duration: $T_{\mathrm{persist}} \geq 1/\Delta$, connecting Kramers
-    escape theory to market regime stability (Sec.~\ref{sec:spectral_gap}).
-
-  \item \textbf{Comprehensive validation.} We validate on non-reversible
-    Langevin dynamics (recovering Kramers' rates), apply to 19 years of
-    U.S.\ equity data with IAAFT surrogate testing ($p < 10^{-4}$,
-    Cohen's $d = 33.0$), and benchmark against HMM, DMD, GARCH, and
-    PCA baselines (Secs.~\ref{sec:synthetic}--\ref{sec:results}).
+  \item \textbf{Rigorous empirical validation.}  We validate on
+    non-reversible Langevin dynamics, apply to 19~years of U.S.\ equity
+    data with IAAFT surrogate testing ($p < 10^{-4}$, Cohen's
+    $d = 33.0$), and benchmark against HMM, DMD, GARCH, and PCA
+    baselines (Secs.~\ref{sec:synthetic}--\ref{sec:results}).
 \end{enumerate}
 
 The remainder of this paper is organized as follows.
@@ -327,17 +324,25 @@ decay rate is
 and $\Delta = \gamma_{\mathrm{Kramers}}$ to leading order.
 
 For non-reversible dynamics, the bound~\eqref{eq:persistence} remains valid
-as a consequence of the spectral mapping theorem: the slowest-decaying mode
-sets a lower bound on mixing time regardless of
-reversibility~\cite{hwang2005accelerating}. However, the bound is typically
-\emph{not tight} in the non-reversible case. Non-conservative forces can
-accelerate mixing by introducing probability currents that shortcut between
-metastable basins~\cite{rey-bellet2006open}, so the actual regime persistence
-may be significantly shorter than $1/\Delta$. We therefore interpret
-$T_{\mathrm{persist}} \geq 1/\Delta$ as a conservative estimate. In the
-financial context, the spectral gap quantifies how quickly market regimes
-(bull/bear, low/high volatility) can transition, with deeper ``potential
-barriers'' between regimes implying longer persistence.
+as a consequence of the spectral mapping theorem: the slowest-decaying
+mode sets a lower bound on mixing time regardless of
+reversibility~\cite{hwang2005accelerating}.  Non-conservative forces
+can accelerate mixing beyond this
+bound~\cite{rey-bellet2006open}, so $1/\Delta$ is conservative.
+
+\paragraph{Finite-dimensional Galerkin projection.}
+The VAMP framework (Sec.~\ref{sec:vamp}) yields a $K \times K$ matrix
+$\mathbf{K}$ that is the optimal rank-$K$ Galerkin projection of the
+infinite-dimensional Koopman operator onto the learned basis
+functions~\cite{wu2020variational}.  Its eigenvalues approximate the
+$K$ dominant Koopman eigenvalues, and the VAMP-2 score
+$\mathcal{R}_2 = \sum_k \sigma_k^2$ provides a variational certificate
+of approximation quality: higher $\mathcal{R}_2$ implies that a larger
+fraction of the operator's spectral content is resolved.  The unresolved
+modes ($k > K$) contribute to residual autocorrelation in the projected
+dynamics; we assess this via Ljung-Box tests (Sec.~\ref{sec:stat_results})
+and interpret significant residuals as evidence that $K$ modes provide a
+low-rank approximation, not an exact representation, of the full dynamics.
 
 \subsection{Entropy production from the Koopman spectrum}
 \label{sec:entropy}
@@ -355,62 +360,173 @@ measure and $P_\tau^{\mathrm{rev}}(\mathbf{x},\mathbf{y}) =
 \mu(\mathbf{y})\,p_\tau(\mathbf{x}|\mathbf{y})$ is the time-reversed
 measure. Detailed balance holds if and only if $\ep = 0$.
 
-We decompose $\ep$ into per-mode contributions using the Koopman spectrum.
-For each eigenvalue $\lambda_k$ with angular frequency
-$\omega_k = \arg(\lambda_k)/\tau$ and eigenfunction amplitude
-$A_k = \langle |\psi_k|^2 \rangle_\mu$, the $k$-th mode contribution is
+We now derive the per-mode decomposition.
+The time-reversed transition density follows from Bayes' theorem and
+stationarity ($\int \mu(\mathbf{x})\,p_\tau(\mathbf{y}|\mathbf{x})\,
+\mathrm{d}\mathbf{x} = \mu(\mathbf{y})$):
+\begin{equation}\label{eq:reverse_kernel}
+  \tilde{p}_\tau(\mathbf{y}|\mathbf{x})
+  = \frac{\mu(\mathbf{y})\,p_\tau(\mathbf{x}|\mathbf{y})}{\mu(\mathbf{x})}.
+\end{equation}
+Substituting the biorthogonal expansion~\eqref{eq:spectral_nonreversible}
+into~\eqref{eq:reverse_kernel} and using
+$p_\tau(\mathbf{x}|\mathbf{y}) = \mu(\mathbf{x})\sum_k \lambda_k\,
+u_k(\mathbf{y})\,v_k(\mathbf{x})$ gives
+\begin{equation}\label{eq:reverse_spectral}
+  \tilde{p}_\tau(\mathbf{y}|\mathbf{x})
+  = \mu(\mathbf{y}) \sum_{k=0}^{\infty}
+    \lambda_k\, v_k(\mathbf{x})\, u_k(\mathbf{y}),
+\end{equation}
+which differs from the forward kernel~\eqref{eq:spectral_nonreversible}
+by the interchange $u_k \leftrightarrow v_k$.  For reversible dynamics
+$u_k = v_k$ and the two kernels coincide; for non-reversible dynamics
+the eigenvector asymmetry generates a nonvanishing log-ratio.
+
+The entropy production~\eqref{eq:ep_kl} involves the expectation of
+$\ln[p_\tau/\tilde{p}_\tau]$ under the forward measure.  Define the
+forward and reversed spectral sums (excluding the trivial $k=0$ mode):
+\begin{equation}
+  f(\mathbf{x},\mathbf{y}) = \sum_{k \geq 1} \lambda_k\, u_k(\mathbf{x})\,
+    v_k(\mathbf{y}), \quad
+  \tilde{f}(\mathbf{x},\mathbf{y}) = \sum_{k \geq 1} \lambda_k\,
+    v_k(\mathbf{x})\, u_k(\mathbf{y}).
+\end{equation}
+Setting $\Delta f = f - \tilde{f}$, the log-ratio
+$\ln[(1+f)/(1+\tilde{f})]$ can be expanded to leading order
+in $\Delta f/(1+\tilde{f})$:
+\begin{equation}\label{eq:log_expand}
+  \ln\frac{p_\tau}{\tilde{p}_\tau}
+  = \frac{\Delta f}{1 + \tilde{f}}
+    - \frac{(\Delta f)^2}{2(1 + \tilde{f})^2} + O(\Delta f^3).
+\end{equation}
+The first-order term vanishes upon averaging against the stationary
+measure by the biorthogonality $\langle v_j, u_k \rangle_\mu =
+\delta_{jk}$.  The leading nonvanishing contribution is therefore
+\emph{second-order} in the forward-backward asymmetry:
+\begin{equation}\label{eq:ep_secondorder}
+  \ep = \frac{1}{2\tau}
+    \left\langle \frac{(\Delta f)^2}{(1+\tilde{f})^2}
+    \right\rangle_{\!\!P^{\mathrm{fwd}}} + O(\Delta f^4).
+\end{equation}
+This quadratic scaling is the fundamental reason that per-mode
+contributions scale as $\omega_k^2$: for each complex eigenvalue
+$\lambda_k = |\lambda_k|\,e^{i\omega_k\tau}$, the eigenvector
+asymmetry $u_k \neq v_k$ is induced by the oscillatory component
+$\omega_k$, and the KL divergence inherits the $\omega_k^2$
+dependence through~\eqref{eq:ep_secondorder}.
+
+To obtain a mode-resolved expression, we work in the
+finite-dimensional Koopman matrix representation.
+Decompose the whitened Koopman matrix (Eq.~\ref{eq:whitened_K}) as
+$\mathbf{K} = \mathbf{K}_S + \mathbf{K}_A$, where
+$\mathbf{K}_S = (\mathbf{K} + \mathbf{K}^T)/2$ is the symmetric
+(equilibrium) part and $\mathbf{K}_A = (\mathbf{K} - \mathbf{K}^T)/2$
+is the antisymmetric part encoding non-equilibrium currents.
+The perturbative entropy production rate to leading order in
+$\mathbf{K}_A$ is~\cite{gaspard2004time,maes2003time}
+\begin{equation}\label{eq:ep_perturbative}
+  \ep = \frac{2}{\tau}\,
+    \mathrm{tr}\!\left(\mathbf{K}_A^T\,
+    \mathbf{K}_S^{-1}\,\mathbf{K}_A\right)
+    + O\!\left(\|\mathbf{K}_A\|^4\right).
+\end{equation}
+In the eigenbasis of $\mathbf{K}_S$ (with eigenvalues $\mu_k$ and
+decay rates $\gamma_k = -\ln\mu_k/\tau$), the trace evaluates to
+\begin{equation}\label{eq:ep_modesum}
+  \ep = \frac{2}{\tau}\sum_{k=1}^{K}
+    \frac{(\mathbf{K}_A)_{kk}^2}{\mu_k}
+    + \text{off-diag.\ terms},
+\end{equation}
+where the diagonal contributions $(\mathbf{K}_A)_{kk}$ are related
+to the oscillation frequencies $\omega_k$ through
+$\mathrm{Im}(\lambda_k) \approx (\mathbf{K}_A)_{kk}$ at leading
+order in perturbation theory.
+
+For the spectral irreversibility index reported in this work, we
+adopt the simplified form
 \begin{equation}\label{eq:ep_mode}
-  \dot{S}_k = \omega_k^2\, A_k.
+  \dot{S}_k = \omega_k^2\, A_k,
 \end{equation}
-The total spectral entropy production is
+where $\omega_k = \arg(\lambda_k)/\tau$ and
+$A_k = \langle |\psi_k|^2 \rangle_\mu$ is the eigenfunction amplitude.
+The total resolved spectral irreversibility is
 \begin{equation}\label{eq:ep_total}
-  \ep_{\mathrm{spectral}} = \sum_{k=1}^{K} \dot{S}_k
-  = \sum_{k=1}^{K} \omega_k^2\, A_k.
+  \ep_{\mathrm{spectral}} = \sum_{k=1}^{K} \omega_k^2\, A_k.
 \end{equation}
-Modes with $\omega_k = 0$ (real eigenvalues) contribute zero entropy
-production, consistent with the fact that they describe purely relaxational
-dynamics. Oscillatory modes ($\omega_k \neq 0$) drive irreversibility, with
-the contribution scaling quadratically in frequency.
+This captures two essential physical features:
+(i)~modes with $\omega_k = 0$ (real eigenvalues) contribute zero,
+consistent with purely relaxational dynamics satisfying detailed
+balance; and (ii)~the contribution scales quadratically in
+frequency, so faster oscillatory modes---corresponding to
+stronger probability currents---dominate the irreversibility budget.
 
-This decomposition is the spectral analogue of the entropy production
-decomposition in terms of probability currents in stochastic
-thermodynamics~\cite{gaspard2004time,maes2003time}. It enables
-identification of which dynamical timescales contribute most to the
-market's departure from equilibrium.
-
-We emphasize that Eq.~\eqref{eq:ep_mode} is an \emph{approximation}
-valid in the weakly dissipative regime where the non-conservative
-component of the dynamics is a small perturbation of the
-detailed-balance-satisfying part~\cite{gaspard2004time}. In this limit
-the leading-order correction to the equilibrium spectrum enters
-through the imaginary parts $\omega_k$, and the quadratic scaling
-$\dot{S}_k \propto \omega_k^2$ follows from the perturbative expansion
-of the Kullback-Leibler divergence. For strongly non-equilibrium
-systems where $\omega_k \sim \gamma_k$, higher-order terms in the
-expansion become relevant and Eq.~\eqref{eq:ep_mode} underestimates the
-true per-mode entropy production. We verify the self-consistency of
-the approximation empirically through the entropy production consistency
-loss (Sec.~\ref{sec:loss}), which penalizes deviations between
-the spectral sum and the non-parametric KDE estimate.
+We stress three limitations.  First,
+Eq.~\eqref{eq:ep_mode} omits the decay-rate prefactors
+$\sim 1/\gamma_k$ present in the full perturbative
+result~\eqref{eq:ep_perturbative}; the simplified form preserves
+the relative ranking of mode contributions (which modes dominate
+irreversibility) but not the absolute magnitude.
+Second, the sum runs over only the $K$ resolved Koopman modes;
+unresolved higher-frequency modes ($k > K$) contribute additional
+irreversibility that the spectral index does not capture.  Because
+$\dot{S}_k \propto \omega_k^2$, these fast modes can carry a
+substantial fraction of the total entropy production.
+Third, the perturbative expansion~\eqref{eq:ep_perturbative} is valid
+when $\|\mathbf{K}_A\|_F \ll \|\mathbf{K}_S\|_F$; for strongly
+non-equilibrium dynamics, higher-order terms become relevant.
+We verify the self-consistency empirically through the
+entropy production consistency loss (Sec.~\ref{sec:loss}).
 
 \subsection{Irreversibility field}
 \label{sec:irreversibility}
 
 To localize broken detailed balance in state space, we construct the
-\textit{irreversibility field}:
+\textit{irreversibility field} from the singular value decomposition
+(SVD) of the Koopman operator.
+Recall that the SVD~\eqref{eq:svd_koopman} provides the decomposition
+$\Koop^\tau = \sum_k \sigma_k\,|u_k\rangle\langle v_k|$, where
+$\{u_k\}$ and $\{v_k\}$ are the right and left singular vectors
+(orthonormal bases of the range and domain, respectively) and
+$\sigma_k \geq 0$ are the singular values.
+These are distinct from the biorthogonal \emph{eigen}functions of
+Sec.~\ref{sec:breaking_db}: singular vectors are always real-valued
+and orthonormal, whereas eigenfunctions may be complex and satisfy
+only biorthogonality.  We define
 \begin{equation}\label{eq:irrev_field}
-  I(\mathbf{x}) = \sum_{k=1}^{K} \sigma_k\, |u_k(\mathbf{x}) - v_k(\mathbf{x})|^2,
+  I(\mathbf{x}) = \sum_{k=1}^{K} \sigma_k\, |u_k(\mathbf{x}) - v_k(\mathbf{x})|^2.
 \end{equation}
-where $u_k$ and $v_k$ are the right and left eigenfunctions (or singular
-vectors) and $\sigma_k$ are the singular values of the Koopman operator.
 
-The key insight is that $I(\mathbf{x}) = 0$ everywhere if and only if the
-dynamics are reversible ($u_k = v_k$ for all $k$). The magnitude of
-$I(\mathbf{x})$ at a given state quantifies the local strength of
-probability currents. In a double-well system, $I(\mathbf{x})$ peaks at the
-barrier where the non-conservative force drives circulation; in financial
-markets, it identifies states (e.g., specific volatility-return combinations)
-where the dynamics are most strongly irreversible.
+\begin{proposition}\label{prop:irrev}
+$I(\mathbf{x}) = 0$ for $\mu$-almost every $\mathbf{x}$ if and only if
+$\Koop^\tau$ restricted to the $K$-dimensional learned subspace is
+self-adjoint (i.e., the projected dynamics satisfy detailed balance).
+\end{proposition}
+
+\begin{proof}
+(\emph{Forward.})
+If $\Koop^\tau$ is self-adjoint on $L^2(\Omega,\mu)$, its SVD coincides
+with the eigendecomposition: $\sigma_k = |\lambda_k|$ and $u_k = v_k$
+for each $k$ (the left and right singular vectors are the orthonormal
+eigenfunctions).  Thus every term
+$|u_k(\mathbf{x}) - v_k(\mathbf{x})|^2 = 0$, giving $I(\mathbf{x}) = 0$.
+
+(\emph{Backward.})
+Suppose $I(\mathbf{x}) = 0$ $\mu$-a.e.  Since $\sigma_k > 0$ for each
+retained mode, each summand must vanish: $u_k = v_k$ in
+$L^2(\Omega,\mu)$ for $k = 1, \ldots, K$.  The SVD restricted to the
+learned subspace is then
+$\Koop^\tau\big|_K = \sum_{k=1}^K \sigma_k\,|u_k\rangle\langle u_k|$,
+which is manifestly self-adjoint.  By the duality
+condition~\eqref{eq:detailed_balance}, this implies that the
+$K$-dimensional projected dynamics satisfy detailed balance.
+\end{proof}
+
+The magnitude of $I(\mathbf{x})$ at a given state quantifies the local
+strength of non-equilibrium probability currents.
+We emphasize that Proposition~\ref{prop:irrev} is a statement about the
+\emph{projected} dynamics in the $K$-dimensional Koopman subspace;
+$I(\mathbf{x}) = 0$ does not imply global detailed balance, since
+unresolved modes may still carry irreversibility.
 
 \subsection{Detailed balance violation and fluctuation theorems}
 \label{sec:db_violation}
@@ -457,72 +573,28 @@ block-bootstrap null distribution provides $p$-values for each $n$.
 \subsection{Applicability to driven complex systems}
 \label{sec:applicability}
 
-The Koopman--VAMP framework rests on two structural assumptions---Markovianity
-and (local) stationarity---whose validity for financial time series requires
-careful justification. We address each in turn and delineate the sense in
-which the framework applies to systems that, unlike molecular fluids, possess
-no microscopic Hamiltonian.
+The Koopman--VAMP framework rests on two structural
+assumptions whose validity for financial data requires justification.
+\emph{Markovianity} is enforced via Takens delay
+embedding~\cite{takens1981detecting} ($m = 5$, Sec.~\ref{sec:embedding})
+and verified by the Chapman-Kolmogorov test (Sec.~\ref{sec:ck_theory}).
+\emph{Local stationarity} is approximate: financial markets are globally
+non-stationary, but the rolling-window analysis
+(Sec.~\ref{sec:rolling_results}) refreshes the Koopman operator every
+500~days, tracking spectral evolution explicitly.
 
-\paragraph{Markovianity via state-space reconstruction.}
-Raw financial returns $r_t$ are not Markov: volatility clustering, serial
-correlation, and long memory in absolute returns all indicate that $r_t$
-carries insufficient information about the future. The Takens embedding
-theorem~\cite{takens1981detecting} resolves this by constructing a delay
-vector $\mathbf{X}_t = (r_t, r_{t-\delta}, \ldots, r_{t-(m-1)\delta})$
-that generically provides a diffeomorphic image of the underlying
-attractor for sufficiently large $m$. In this reconstructed state space,
-the dynamics become (approximately) Markov: $\mathbf{X}_{t+\tau}$ depends
-on $\mathbf{X}_t$ but not on $\mathbf{X}_{t-s}$ for $s > 0$. We select
-$m$ via the false-nearest-neighbors criterion (Sec.~\ref{sec:embedding})
-and verify the resulting Markov property through the Chapman-Kolmogorov
-test (Sec.~\ref{sec:ck_theory}), which is specifically designed to detect
-memory effects that would invalidate the Markov assumption.
-
-\paragraph{Local stationarity.}
-Financial markets are globally non-stationary: structural breaks, changing
-regulations, and evolving market microstructure render any
-stationary-process assumption approximate. However, the Koopman
-operator is well defined for \emph{locally} stationary processes---those
-whose transition kernel $p_\tau(\mathbf{y}|\mathbf{x})$ is approximately
-time-invariant over the training window. Our rolling-window analysis
-(Sec.~\ref{sec:rolling_results}) estimates a separate Koopman operator for
-each 500-day window, explicitly tracking how the spectral properties
-evolve as the local stationarity assumption is refreshed. The
-Chapman-Kolmogorov test within each window provides a quantitative
-check of the stationarity approximation.
-
-\paragraph{Operator-theoretic, not energetic, framework.}
-Unlike molecular dynamics, financial markets have no conserved energy,
-no temperature, and no detailed-balance-satisfying equilibrium state in
-the thermodynamic sense. The Koopman operator, however, is a
-\emph{kinematic} object: it describes the evolution of observables under
-\emph{any} stochastic dynamics, conservative or not. Its eigenvalues
-encode timescales and oscillation frequencies regardless of whether the
-underlying system possesses a Hamiltonian~\cite{budivsic2012applied,
-brunton2022modern}. The thermodynamic quantities we compute---entropy
-production, irreversibility field, detailed balance violation---are
+We emphasize that the Koopman operator is a \emph{kinematic} object
+defined for any stochastic dynamics, with or without a
+Hamiltonian~\cite{budivsic2012applied,brunton2022modern}.
+The thermodynamic quantities we compute---entropy production,
+irreversibility field, detailed balance violation---are
 \emph{information-theoretic}: they measure the distinguishability of
 forward and time-reversed trajectories via Kullback-Leibler divergence,
-not the dissipation of physical energy. This information-theoretic
-interpretation is well established in stochastic thermodynamics
-for non-physical systems~\cite{roldan2010estimating,seifert2012stochastic}
-and has been formally connected to financial decision theory through
-fluctuation relations~\cite{ducuara2023maxwell}.
-
-\paragraph{Financial markets as driven open systems.}
-From the physics perspective, financial markets resemble driven open
-systems rather than isolated systems approaching equilibrium. Exogenous
-forcing (monetary policy, macroeconomic shocks, information arrival)
-continuously injects ``energy'' (in the form of order flow and price
-impact), while transaction costs and behavioral biases provide
-dissipation. The resulting non-equilibrium steady state sustains
-probability currents that our framework detects through complex Koopman
-eigenvalues and quantifies through the entropy production decomposition.
-This analogy is not merely metaphorical: the mathematical structure of
-the Koopman operator for a driven stochastic system is identical whether
-the system is a colloidal particle in an optical trap or a price process
-under continuous information
-arrival~\cite{seifert2012stochastic,ciliberto2017experiments}.
+not the dissipation of physical energy.  This interpretation is well
+established for non-physical systems~\cite{roldan2010estimating,
+seifert2012stochastic} and has been formally connected to financial
+decision theory through fluctuation
+relations~\cite{ducuara2023maxwell}.
 
 
 % ============================================================================
@@ -631,22 +703,6 @@ The full forward pass proceeds as follows:
   \item Eigendecomposition: $\lambda_k = \mathrm{eig}(\mathbf{K})$
     (complex).
 \end{enumerate}
-
-\subsection{Matrix square-root inverse}
-\label{sec:matrix_sqrt}
-
-The whitening step requires $\mathbf{C}^{-1/2}$ for symmetric
-positive-semidefinite covariance matrices. We compute this via
-eigendecomposition:
-\begin{equation}\label{eq:matrix_sqrt_inv}
-  \mathbf{C}^{-1/2}
-  = \mathbf{Q}\,\mathrm{diag}\!\left(
-      \tilde{\lambda}_i^{-1/2}
-    \right)\,\mathbf{Q}^T,
-\end{equation}
-where $\mathbf{C} = \mathbf{Q}\,\mathrm{diag}(\lambda_i)\,\mathbf{Q}^T$
-and $\tilde{\lambda}_i = \max(\lambda_i, \epsilon)$ with $\epsilon = 10^{-6}$
-ensures numerical stability.
 
 \subsection{Loss function}
 \label{sec:loss}
@@ -973,7 +1029,7 @@ Spectral gap $\Delta$ & $0.167$ & Regime persistence $\geq 6.0$ days \\
 Complex modes / total & $12/15$ & Dominant oscillatory content \\
 Detailed balance violation $\mathcal{D}$ & $0.728$ & Substantial Frobenius asymmetry \\
 Entropy $\dot{S}_{\mathrm{emp}}$ (KDE) & $51.2\ [48.8,\, 52.2]$ bits/day & Strongly irreversible ($\dot{S} \gg 0$) \\
-Spectral entropy $\sum_k \omega_k^2 A_k$ & $1.53$ & Lower bound (grows with $K$) \\
+Spectral index $\sum_k \omega_k^2 A_k$ & $1.53$ & Resolved-mode irreversibility \\
 Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $8.42$ & Elevated non-equilibrium field \\
 NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.50$ & Best among all baselines \\
 \hline
@@ -982,7 +1038,7 @@ NBER F1 (HMM on $\psi_{1\text{--}5}$) & $0.50$ & Best among all baselines \\
 Test VAMP-2 score & $-0.789$ & Single-asset dynamics captured \\
 Spectral gap $\Delta$ & $0.323$ & Regime persistence $\geq 3.1$ days \\
 Leading relaxation time & $7.4$ days & Dominant timescale \\
-Entropy (empirical / spectral) & $4.20\ [3.82,\, 4.58]$ / $0.064$ & Positive EP; spectral is lower bound \\
+Entropy (KDE / spectral index) & $4.20\ [3.82,\, 4.58]$ / $0.064$ & Positive EP; index captures $K$ modes \\
 Detailed balance violation $\mathcal{D}$ & $0.509$ & Consistent asymmetry \\
 Mean irreversibility $\langle I(\mathbf{x}) \rangle$ & $2.70$ & Non-equilibrium field \\
 NBER accuracy / F1 & $0.854$ / $0.332$ & Competitive with dedicated methods \\
@@ -1112,22 +1168,32 @@ $\dot{S}_{\mathrm{emp}}$ is computed directly from the time series via
 KDE density ratios, it is independent of network initialization---a
 model-free confirmation of time-reversal asymmetry.
 
-The spectral decomposition $\dot{S}_k = \omega_k^2 A_k$
+The spectral irreversibility index $\sum_k \omega_k^2 A_k$
 (Eq.~\ref{eq:ep_total}) yields
 $\dot{S}_{\mathrm{spectral}} = 1.53$ (multiasset, $K=15$) and
-$0.064$ (univariate, $K=5$), lower than the KDE estimates by factors
-of $\sim$33 and $\sim$66, respectively.  This gap is expected: the
-perturbative decomposition (Eq.~\ref{eq:ep_mode}) resolves only the
-leading-order contribution from the $K$ retained modes, while the
-KDE estimator captures the \emph{full} Kullback-Leibler divergence
-between forward and time-reversed path densities across all degrees of
-freedom.  The spectral estimate therefore serves as a \emph{lower bound}
-that converges from below as $K$ increases, while providing a
-physically interpretable decomposition into mode contributions.
+$0.064$ (univariate, $K=5$).  These values are smaller than the
+KDE estimates by factors of $\sim$33 and $\sim$66, respectively.
+The gap has three well-understood sources:
+(i)~the spectral index sums over only the $K$ resolved Koopman modes;
+because $\dot{S}_k \propto \omega_k^2$, the unresolved high-frequency
+modes ($k > K$)---which by construction have the largest $\omega_k$
+values---carry a substantial and potentially dominant fraction of the
+total irreversibility;
+(ii)~the simplified index~\eqref{eq:ep_mode} omits the decay-rate
+prefactors $\sim 1/\gamma_k$ present in the full perturbative
+result~\eqref{eq:ep_perturbative}, which amplify contributions from
+slowly decaying modes; and
+(iii)~the perturbative expansion itself underestimates entropy
+production in the strongly non-equilibrium regime where
+$\|\mathbf{K}_A\|_F$ is not small relative to $\|\mathbf{K}_S\|_F$.
+The spectral index is therefore \emph{not} an estimate of the full
+entropy production; rather, it provides a mode-resolved decomposition
+of the \emph{resolved} irreversibility, identifying which dynamical
+timescales contribute most.
 The dominant mode ($\omega_0 = 0.63$~rad/lag, period $\sim$10~days)
 contributes 25.8\% of the spectral total, and the top three conjugate
 pairs account for $>$85\% of $\dot{S}_{\mathrm{spectral}}$,
-indicating that market irreversibility is concentrated in a
+indicating that the resolved irreversibility is concentrated in a
 low-dimensional oscillatory subspace
 (Fig.~\ref{fig:entropy_decomposition}).
 
@@ -1358,13 +1424,15 @@ structure alone (Fig.~\ref{fig:permutation_null}).
 
 \paragraph{Ljung-Box residual test.}
 All 10 embedding dimensions exhibit strong residual autocorrelation
-($p \approx 0$ at 20 lags for all dimensions), indicating that the
-Koopman model does not fully capture the temporal dependence in the
-data. This is expected: the 10-mode Koopman decomposition provides a
-low-rank approximation that captures the dominant spectral structure
-but cannot represent all dynamical information in the system. The
-residual autocorrelation is consistent with the presence of
-higher-order modes beyond the $K = 10$ resolved modes.
+($p \approx 0$ at 20 lags for all dimensions).  This is the expected
+signature of a low-rank Galerkin projection (Sec.~\ref{sec:spectral_gap}):
+the $K$-mode approximation resolves the dominant spectral structure but
+cannot represent the full dynamical information, and the unresolved modes
+manifest as residual autocorrelation.  The Ljung-Box result does not
+invalidate the decomposition; rather, it confirms that the rank-$K$
+truncation discards high-frequency content, consistent with the gap
+between the spectral irreversibility index and the KDE estimate
+(Sec.~\ref{sec:entropy_results}).
 
 \paragraph{KS eigenfunction stability.}
 The Kolmogorov-Smirnov test comparing train and test eigenfunction
