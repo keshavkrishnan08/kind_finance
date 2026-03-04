@@ -36,7 +36,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ---------------------------------------------------------------------------
 
-from src.constants import DATE_RANGES, TICKER_VIX, DOWNLOAD_START, DOWNLOAD_END
+from src.constants import DATE_RANGES, TICKER_VIX, DOWNLOAD_START, DOWNLOAD_END, NBER_RECESSIONS
 from src.utils.config import load_config, merge_configs
 from src.utils.reproducibility import set_seed, get_device
 from src.data.preprocessing import (
@@ -368,6 +368,136 @@ def compare_spectral_gap_vix(
 
 
 # =====================================================================
+# Out-of-sample crisis prediction
+# =====================================================================
+
+def crisis_prediction_test(
+    rolling_df: pd.DataFrame,
+    project_root: Path,
+    horizon_days: int = 60,
+    min_train_windows: int = 200,
+) -> Dict[str, Any]:
+    """Out-of-sample crisis prediction using spectral features.
+
+    Uses expanding-window logistic regression on spectral features
+    to predict NBER recession onset within ``horizon_days``.
+
+    Returns dict with AUROC for spectral model and VIX baseline.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+
+    if "center_date" not in rolling_df.columns:
+        return {"prediction": "skipped", "reason": "no date column"}
+
+    dates = pd.to_datetime(rolling_df["center_date"])
+
+    # Create forward-looking recession label
+    recession_starts = [pd.Timestamp(s) for s, _e in NBER_RECESSIONS]
+    y = np.zeros(len(dates), dtype=int)
+    for i, d in enumerate(dates):
+        for rs in recession_starts:
+            if 0 <= (rs - d).days <= horizon_days:
+                y[i] = 1
+                break
+
+    # Feature matrix from rolling spectral diagnostics
+    feature_cols = ["spectral_gap", "entropy_production",
+                    "mean_irreversibility", "vamp2_score"]
+    available = [c for c in feature_cols if c in rolling_df.columns]
+    if not available:
+        return {"prediction": "skipped", "reason": "no spectral features"}
+
+    X = rolling_df[available].values
+
+    # Filter invalid rows
+    valid = np.all(np.isfinite(X), axis=1)
+    X, y, dates_valid = X[valid], y[valid], dates[valid].reset_index(drop=True)
+
+    if len(X) < min_train_windows + 50:
+        return {"prediction": "skipped", "reason": "insufficient data"}
+
+    if y.sum() == 0:
+        return {"prediction": "skipped", "reason": "no positive labels in data"}
+
+    # Expanding-window evaluation
+    y_prob = np.full(len(X), np.nan)
+    for t in range(min_train_windows, len(X)):
+        X_train, y_train = X[:t], y[:t]
+        if y_train.sum() == 0 or y_train.sum() == len(y_train):
+            continue
+        clf = LogisticRegression(max_iter=1000, class_weight="balanced",
+                                 solver="lbfgs")
+        clf.fit(X_train, y_train)
+        y_prob[t] = clf.predict_proba(X[t:t + 1])[0, 1]
+
+    eval_mask = ~np.isnan(y_prob)
+    y_eval = y[eval_mask]
+    prob_eval = y_prob[eval_mask]
+
+    if y_eval.sum() == 0 or y_eval.sum() == len(y_eval):
+        return {"prediction": "skipped", "reason": "no class variation in OOS"}
+
+    auroc = float(roc_auc_score(y_eval, prob_eval))
+
+    # VIX baseline AUROC
+    vix_auroc = _vix_baseline_auroc(dates_valid, eval_mask, y_eval,
+                                     project_root)
+
+    result = {
+        "prediction": "completed",
+        "auroc_spectral": auroc,
+        "auroc_vix_baseline": vix_auroc,
+        "n_oos_windows": int(eval_mask.sum()),
+        "n_positive": int(y_eval.sum()),
+        "n_total": int(len(y_eval)),
+        "positive_rate": float(y_eval.mean()),
+        "horizon_days": horizon_days,
+        "features_used": available,
+    }
+    if vix_auroc is not None:
+        result["improvement_over_vix"] = auroc - vix_auroc
+    logger.info("Crisis prediction: AUROC=%.3f (VIX baseline=%.3f)",
+                auroc, vix_auroc if vix_auroc else 0.0)
+    return result
+
+
+def _vix_baseline_auroc(
+    dates_valid: pd.Series,
+    eval_mask: np.ndarray,
+    y_true: np.ndarray,
+    project_root: Path,
+) -> Optional[float]:
+    """AUROC for VIX level as crisis predictor (baseline)."""
+    from sklearn.metrics import roc_auc_score
+
+    vix_file = project_root / "data" / "vix.csv"
+    if not vix_file.exists():
+        return None
+
+    vix_df = pd.read_csv(vix_file, index_col=0, parse_dates=True)
+    vix_col = "Close" if "Close" in vix_df.columns else vix_df.columns[0]
+
+    eval_dates = dates_valid[eval_mask]
+    common = eval_dates[eval_dates.isin(vix_df.index)]
+    if len(common) < 50:
+        return None
+
+    # Align: only use dates present in both
+    mask_in_common = eval_dates.isin(vix_df.index).values
+    vix_vals = vix_df.loc[eval_dates[mask_in_common], vix_col].values
+    y_aligned = y_true[mask_in_common]
+
+    if len(y_aligned) < 50 or y_aligned.sum() == 0 or y_aligned.sum() == len(y_aligned):
+        return None
+
+    try:
+        return float(roc_auc_score(y_aligned, vix_vals))
+    except ValueError:
+        return None
+
+
+# =====================================================================
 # CLI
 # =====================================================================
 
@@ -464,6 +594,12 @@ def main() -> None:
     with open(comparison_path, "w") as f:
         json.dump(vix_comparison, f, indent=2, default=str)
 
+    # Out-of-sample crisis prediction
+    prediction_results = crisis_prediction_test(rolling_df, project_root)
+    prediction_path = output_dir / "crisis_prediction.json"
+    with open(prediction_path, "w") as f:
+        json.dump(prediction_results, f, indent=2, default=str)
+
     # Print summary
     print("\n" + "=" * 70)
     print("KTND-Finance: Rolling Spectral Analysis Summary")
@@ -498,8 +634,21 @@ def main() -> None:
     else:
         print(f"\n  VIX comparison: {vix_comparison.get('reason', 'skipped')}")
 
+    if prediction_results.get("prediction") == "completed":
+        print(f"\n  Crisis Prediction (OOS, horizon={prediction_results['horizon_days']}d):")
+        print(f"    AUROC (spectral): {prediction_results['auroc_spectral']:.4f}")
+        vix_auc = prediction_results.get('auroc_vix_baseline')
+        if vix_auc is not None:
+            print(f"    AUROC (VIX):      {vix_auc:.4f}")
+            print(f"    Improvement:      {prediction_results.get('improvement_over_vix', 0):+.4f}")
+        print(f"    OOS windows:      {prediction_results['n_oos_windows']}")
+        print(f"    Positive rate:    {prediction_results['positive_rate']:.3f}")
+    else:
+        print(f"\n  Crisis prediction: {prediction_results.get('reason', 'skipped')}")
+
     print(f"\n  Results: {csv_path}")
     print(f"  VIX comparison: {comparison_path}")
+    print(f"  Crisis prediction: {prediction_path}")
     print("=" * 70 + "\n")
 
 

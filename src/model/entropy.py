@@ -25,6 +25,87 @@ from scipy.stats import gaussian_kde
 # Empirical entropy production via KDE
 # ---------------------------------------------------------------------------
 
+def knn_entropy_production(
+    returns: Tensor,
+    tau: int,
+    k: int = 5,
+    n_samples: int = 5000,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """Estimate entropy production via k-nearest-neighbor density ratio.
+
+    Uses a KSG-inspired estimator (Kraskov, Stögbauer, Grassberger, 2004)
+    for the KL divergence between forward and time-reversed joint
+    distributions.  More robust than KDE in high dimensions.
+
+    Parameters
+    ----------
+    returns : Tensor, shape ``(T,)`` or ``(T, d)``
+        Return time series.
+    tau : int
+        Lag (in discrete time steps).
+    k : int
+        Number of nearest neighbors (default 5).
+    n_samples : int
+        Maximum number of transition pairs to use.
+    seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    dict with keys ``point_estimate``, ``k``, ``n_samples_used``,
+    ``dimensionality``.
+    """
+    from scipy.spatial import KDTree
+
+    r = returns.detach().cpu().numpy()
+    if r.ndim == 1:
+        r = r[:, np.newaxis]
+
+    T, d = r.shape
+    if T <= tau:
+        return {"point_estimate": 0.0, "k": k, "n_samples_used": 0,
+                "dimensionality": 2 * d}
+
+    x_t = r[:-tau]
+    x_tau = r[tau:]
+    n_pairs = x_t.shape[0]
+
+    rng = np.random.default_rng(seed)
+    if n_pairs > n_samples:
+        idx = rng.choice(n_pairs, size=n_samples, replace=False)
+        x_t = x_t[idx]
+        x_tau = x_tau[idx]
+
+    # Forward and reversed joint distributions
+    joint_fwd = np.concatenate([x_t, x_tau], axis=1)   # (N, 2d)
+    joint_rev = np.concatenate([x_tau, x_t], axis=1)    # (N, 2d)
+
+    tree_fwd = KDTree(joint_fwd)
+    tree_rev = KDTree(joint_rev)
+
+    # k+1 neighbors (first is the point itself at distance 0)
+    dist_fwd, _ = tree_fwd.query(joint_fwd, k=k + 1)
+    dist_rev, _ = tree_rev.query(joint_fwd, k=k + 1)
+
+    r_fwd_k = np.clip(dist_fwd[:, k], 1e-15, None)
+    r_rev_k = np.clip(dist_rev[:, k], 1e-15, None)
+
+    # KL divergence estimator: D_KL = d_joint * mean(ln r_rev / r_fwd)
+    d_joint = joint_fwd.shape[1]
+    sigma = float(d_joint * np.mean(np.log(r_rev_k / r_fwd_k)))
+    sigma = max(sigma, 0.0)
+
+    return {
+        "point_estimate": sigma,
+        "k": k,
+        "n_samples_used": joint_fwd.shape[0],
+        "dimensionality": d_joint,
+    }
+
+
+# ---------------------------------------------------------------------------
+
 def _kde_entropy_production(
     x_t: np.ndarray,
     x_tau: np.ndarray,

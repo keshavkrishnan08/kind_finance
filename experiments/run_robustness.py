@@ -172,7 +172,7 @@ def chapman_kolmogorov_test(
 
     # Only compare top-k eigenvalues (rest dominated by noise)
     n_modes = len(eigs_base_sorted)
-    k_compare = max(3, n_modes // 2)
+    k_compare = min(max(3, n_modes // 2), 5)  # cap at 5: bottom modes noise-dominated
 
     ck_errors = []
     for n in range(2, n_steps + 1):
@@ -262,7 +262,75 @@ def chapman_kolmogorov_test(
         "n_bootstrap": n_bootstrap,
         "n_steps_tested": len(ck_errors),
         "k_eigenvalues_compared": k_compare,
-        "passed": mean_error < float(np.median(boot_arr)) if len(boot_arr) > 0 else True,
+        "approximately_markovian": mean_error < float(np.median(boot_arr)) if len(boot_arr) > 0 else True,
+        "markov_quality": "good" if mean_error < 0.1 else ("approximate" if mean_error < 0.2 else "poor"),
+    }
+
+
+def ck_convergence_analysis(
+    model: NonEquilibriumVAMPNet,
+    embedded: np.ndarray,
+    tau_trained: int,
+    device: torch.device,
+    tau_values: Optional[List[int]] = None,
+    n_steps: int = 5,
+) -> Dict[str, Any]:
+    """Sweep CK error across different lag values to find optimal Markov tau.
+
+    Uses the already-trained model at different effective lags (by
+    constructing different time-lagged pairs from the same embedding).
+
+    Parameters
+    ----------
+    model : NonEquilibriumVAMPNet
+    embedded : ndarray, shape (T, d)
+    tau_trained : int
+        The lag the model was trained at.
+    device : torch.device
+    tau_values : list of int or None
+        Lags to test.  Defaults to [1, 2, 3, 5, 10].
+    n_steps : int
+        Number of CK steps per tau.
+
+    Returns
+    -------
+    dict with 'tau_values', 'ck_errors', 'best_tau', 'min_error'.
+    """
+    if tau_values is None:
+        tau_values = [1, 2, 3, 5, 10]
+
+    logger.info("Running CK convergence analysis (taus=%s) ...", tau_values)
+    model.eval()
+
+    errors_per_tau: List[float] = []
+
+    for tau_test in tau_values:
+        if tau_test >= len(embedded) // 3:
+            errors_per_tau.append(float("nan"))
+            continue
+
+        try:
+            ck_result = chapman_kolmogorov_test(
+                model, embedded, tau_test, device, n_steps=n_steps,
+            )
+            errors_per_tau.append(ck_result["mean_error"])
+        except Exception as e:
+            logger.warning("CK convergence failed for tau=%d: %s", tau_test, e)
+            errors_per_tau.append(float("nan"))
+
+    # Find best tau (minimum error, ignoring NaN)
+    valid = [(t, e) for t, e in zip(tau_values, errors_per_tau) if np.isfinite(e)]
+    if valid:
+        best_tau, min_error = min(valid, key=lambda x: x[1])
+    else:
+        best_tau, min_error = tau_trained, float("nan")
+
+    return {
+        "tau_values": tau_values,
+        "ck_errors": errors_per_tau,
+        "best_tau": best_tau,
+        "min_error": min_error,
+        "tau_trained": tau_trained,
     }
 
 
@@ -385,6 +453,33 @@ def permutation_test_irreversibility(
         null_means.append(float(np.mean(irrev_s)))
 
     null_arr = np.array(null_means)
+
+    # Filter NaN surrogates (IAAFT can fail in high dimensions)
+    valid_mask = ~np.isnan(null_arr)
+    n_valid = int(valid_mask.sum())
+    if n_valid < len(null_arr):
+        logger.warning(
+            "Filtered %d NaN surrogates from %d total",
+            len(null_arr) - n_valid, len(null_arr),
+        )
+    null_arr = null_arr[valid_mask]
+
+    if n_valid == 0:
+        return {
+            "test": "Permutation_Irreversibility",
+            "surrogate_method": "IAAFT",
+            "observed_mean_irreversibility": mean_irrev_observed,
+            "null_mean": float("nan"),
+            "null_std": float("nan"),
+            "p_value": float("nan"),
+            "cohens_d": float("nan"),
+            "effect_size": "indeterminate",
+            "n_permutations": n_permutations,
+            "n_valid_surrogates": 0,
+            "significant_at_005": False,
+            "significant_at_001": False,
+        }
+
     p_value = float(np.mean(null_arr >= mean_irrev_observed))
 
     # Cohen's d effect size: (observed - null_mean) / null_std
@@ -401,7 +496,7 @@ def permutation_test_irreversibility(
     else:
         effect_interpretation = "negligible"
 
-    return {
+    result = {
         "test": "Permutation_Irreversibility",
         "surrogate_method": "IAAFT",
         "observed_mean_irreversibility": mean_irrev_observed,
@@ -411,9 +506,64 @@ def permutation_test_irreversibility(
         "cohens_d": cohens_d,
         "effect_size": effect_interpretation,
         "n_permutations": n_permutations,
+        "n_valid_surrogates": n_valid,
         "significant_at_005": p_value < 0.05,
         "significant_at_001": p_value < 0.01,
     }
+
+    # PCA-projected model-free irreversibility test for high-dimensional data
+    if embedded.shape[1] > 20:
+        try:
+            from sklearn.decomposition import PCA as _PCA
+            n_pca = min(10, embedded.shape[1])
+            pca = _PCA(n_components=n_pca)
+            x_pca = pca.fit_transform(embedded)
+            var_explained = float(pca.explained_variance_ratio_.sum())
+            logger.info(
+                "PCA-projected permutation test: %d -> %d dims (%.1f%% variance)",
+                embedded.shape[1], n_pca, 100 * var_explained,
+            )
+
+            # Model-free time-reversal asymmetry on PCA-projected data
+            x_t_pca = x_pca[:-tau]
+            x_tau_pca = x_pca[tau:]
+            observed_asym = float(np.mean(np.abs(
+                np.mean(x_tau_pca ** 2 * x_t_pca - x_t_pca ** 2 * x_tau_pca, axis=0)
+            )))
+
+            rng_pca = np.random.default_rng(43)
+            null_asyms: List[float] = []
+            n_pca_perms = min(n_permutations, 500)  # cap for speed
+            for _ in range(n_pca_perms):
+                surr = iaaft_surrogate(x_pca, n_samples=1, max_iter=100, rng=rng_pca)[0]
+                s_t, s_tau = surr[:-tau], surr[tau:]
+                null_asyms.append(float(np.mean(np.abs(
+                    np.mean(s_tau ** 2 * s_t - s_t ** 2 * s_tau, axis=0)
+                ))))
+            null_pca = np.array(null_asyms)
+            pca_p = float(np.mean(null_pca >= observed_asym))
+            pca_std = float(np.std(null_pca))
+            pca_d = float((observed_asym - np.mean(null_pca)) / max(pca_std, 1e-15))
+
+            result["pca_projected_permutation"] = {
+                "n_pca_components": n_pca,
+                "variance_explained": var_explained,
+                "p_value": pca_p,
+                "cohens_d": pca_d,
+                "observed_asymmetry": observed_asym,
+                "null_mean": float(np.mean(null_pca)),
+                "null_std": pca_std,
+                "n_permutations": n_pca_perms,
+            }
+            logger.info(
+                "PCA-projected: p=%.4f, d=%.2f, observed=%.6f, null_mean=%.6f",
+                pca_p, pca_d, observed_asym, float(np.mean(null_pca)),
+            )
+        except Exception as e:
+            logger.warning("PCA-projected permutation test failed: %s", e)
+            result["pca_projected_permutation"] = {"error": str(e)}
+
+    return result
 
 
 # =====================================================================
@@ -821,7 +971,7 @@ def parse_args() -> argparse.Namespace:
         help="Number of bootstrap resamples for eigenvalue CIs.",
     )
     parser.add_argument(
-        "--n-permutations", type=int, default=1000,
+        "--n-permutations", type=int, default=2000,
         help="Number of permutations for the irreversibility test.",
     )
     parser.add_argument(
@@ -877,11 +1027,21 @@ def main() -> None:
     try:
         ck_result = chapman_kolmogorov_test(model, embedded, tau, device, n_steps=5)
         all_tests["chapman_kolmogorov"] = ck_result
-        logger.info("CK test: mean_error=%.6f, p=%.4f, passed=%s",
-                     ck_result["mean_error"], ck_result["p_value"], ck_result["passed"])
+        logger.info("CK test: mean_error=%.6f, p=%.4f, quality=%s",
+                     ck_result["mean_error"], ck_result["p_value"], ck_result["markov_quality"])
     except Exception as e:
         logger.error("Chapman-Kolmogorov test failed: %s", e)
         all_tests["chapman_kolmogorov"] = {"error": str(e)}
+
+    # Test 1b: CK convergence analysis (sweep tau)
+    try:
+        ck_conv = ck_convergence_analysis(model, embedded, tau, device)
+        all_tests["ck_convergence"] = ck_conv
+        logger.info("CK convergence: best_tau=%d, min_error=%.6f",
+                     ck_conv["best_tau"], ck_conv["min_error"])
+    except Exception as e:
+        logger.error("CK convergence analysis failed: %s", e)
+        all_tests["ck_convergence"] = {"error": str(e)}
 
     # Test 2: Bootstrap eigenvalue CIs
     try:

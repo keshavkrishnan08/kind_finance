@@ -476,3 +476,53 @@ class TestEntropyLossConsistency:
             assert sigma_modes[k].item() >= -1e-10, (
                 f"sigma_{k} should be non-negative, got {sigma_modes[k].item()}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests: k-NN entropy production estimator
+# ---------------------------------------------------------------------------
+
+class TestKNNEntropyProduction:
+    """k-NN entropy production estimator (Fix 5 for PRE submission)."""
+
+    def test_knn_reversible_near_zero(self, reversible_trajectory):
+        """k-NN estimate for white noise should be ~0."""
+        from src.model.entropy import knn_entropy_production
+
+        result = knn_entropy_production(
+            torch.tensor(reversible_trajectory, dtype=torch.float32),
+            tau=1, k=5, n_samples=3000,
+        )
+        assert result["point_estimate"] < 1.0, (
+            f"k-NN entropy for white noise should be small, got {result['point_estimate']}"
+        )
+
+    def test_knn_nonrev_positive(self, nonrev_trajectory):
+        """k-NN estimate for rotational drift should be > 0."""
+        from src.model.entropy import knn_entropy_production
+
+        result = knn_entropy_production(
+            torch.tensor(nonrev_trajectory, dtype=torch.float32),
+            tau=1, k=5, n_samples=3000,
+        )
+        assert result["point_estimate"] > 0, (
+            f"k-NN entropy for non-reversible should be > 0, got {result['point_estimate']}"
+        )
+
+    def test_knn_nonnegative(self):
+        """Result is always non-negative."""
+        from src.model.entropy import knn_entropy_production
+
+        data = torch.randn(500, 3)
+        result = knn_entropy_production(data, tau=1, k=3)
+        assert result["point_estimate"] >= 0.0
+
+    def test_knn_output_keys(self):
+        """All expected keys present."""
+        from src.model.entropy import knn_entropy_production
+
+        data = torch.randn(200, 2)
+        result = knn_entropy_production(data, tau=1, k=3)
+        assert set(result.keys()) == {
+            "point_estimate", "k", "n_samples_used", "dimensionality",
+        }
