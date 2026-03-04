@@ -59,11 +59,13 @@ from src.analysis.spectral import SpectralAnalyzer
 from src.analysis.nonequilibrium import (
     detailed_balance_violation,
     fluctuation_theorem_ratio,
+    gallavotti_cohen_symmetry,
     eigenvalue_complex_plane_statistics,
 )
 from src.model.entropy import (
     estimate_empirical_entropy_production_with_ci,
     estimate_per_sample_entropy_production,
+    knn_entropy_production,
 )
 from src.analysis.regime import RegimeDetector
 from src.constants import NBER_RECESSIONS
@@ -569,13 +571,51 @@ def post_training_analysis(
     neq_results["complex_fraction"] = eig_stats["complex_fraction"]
     neq_results["spectral_radius"] = eig_stats["spectral_radius"]
 
-    # Fluctuation theorem: requires per-sample entropy production (N values)
+    # k-NN entropy production estimate (robust in high dimensions)
+    knn_result = knn_entropy_production(returns_tensor, tau=tau, k=5, n_samples=5000)
+    logger.info(
+        "k-NN entropy production: %.6f (k=%d, %d samples, %dD)",
+        knn_result["point_estimate"], knn_result["k"],
+        knn_result["n_samples_used"], knn_result["dimensionality"],
+    )
+
+    # Fluctuation theorem / Gallavotti-Cohen symmetry
     ep_samples = estimate_per_sample_entropy_production(
         returns_tensor, tau=tau, n_samples=5000,
     )
-    ft_result = fluctuation_theorem_ratio(ep_samples)
-    neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
-    neq_results["ft_log_deviation"] = ft_result["log_deviation"]
+
+    entropy_empirical = entropy_ci["point_estimate"]
+    if entropy_empirical > 10.0:
+        # Large entropy: FT ratio exp(-sigma) underflows; use GC symmetry
+        gc_result = gallavotti_cohen_symmetry(ep_samples, n_bins=50, tau=float(tau))
+        neq_results["gc_slope"] = gc_result["slope"]
+        neq_results["gc_intercept"] = gc_result["intercept"]
+        neq_results["gc_r_squared"] = gc_result["r_squared"]
+        neq_results["fluctuation_theorem_method"] = "gallavotti_cohen"
+        ft_result = fluctuation_theorem_ratio(ep_samples)
+        neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
+        neq_results["ft_log_deviation"] = ft_result["log_deviation"]
+        neq_results["ft_numerically_intractable"] = True
+        logger.info(
+            "GC symmetry (entropy=%.1f > 10): slope=%.4f, R^2=%.4f",
+            entropy_empirical, gc_result["slope"], gc_result["r_squared"],
+        )
+        # Save GC symmetry data for figure generation
+        gc_data = {
+            "s_values": gc_result["s_values"].tolist() if hasattr(gc_result["s_values"], "tolist") else list(gc_result["s_values"]),
+            "zeta": gc_result["zeta"].tolist() if hasattr(gc_result["zeta"], "tolist") else list(gc_result["zeta"]),
+            "slope": gc_result["slope"],
+            "intercept": gc_result["intercept"],
+            "r_squared": gc_result["r_squared"],
+        }
+        with open(output_dir / "gallavotti_cohen_symmetry.json", "w") as f:
+            json.dump(gc_data, f, indent=2)
+    else:
+        ft_result = fluctuation_theorem_ratio(ep_samples)
+        neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
+        neq_results["ft_log_deviation"] = ft_result["log_deviation"]
+        neq_results["fluctuation_theorem_method"] = "integral_ft"
+        neq_results["ft_numerically_intractable"] = False
 
     # --- KTND regime detection vs NBER ---
     # Use Gaussian HMM on top eigenfunctions to detect regimes.
@@ -650,6 +690,8 @@ def post_training_analysis(
         "entropy_ci_lower": entropy_ci["ci_lower"],
         "entropy_ci_upper": entropy_ci["ci_upper"],
         "entropy_std_error": entropy_ci["std_error"],
+        "entropy_knn": knn_result["point_estimate"],
+        "entropy_knn_k": knn_result["k"],
         "mean_irreversibility": float(np.mean(irrev_field)),
         "max_irreversibility": float(np.max(irrev_field)),
         "irrev_method": irrev_method,

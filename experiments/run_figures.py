@@ -195,7 +195,7 @@ def fig2_spectral_gap_vix(
             ax1.axvspan(pd.Timestamp(start), pd.Timestamp(end),
                         alpha=0.15, color="gray", label=label)
 
-    ax1.set_title("Spectral Gap vs VIX: Crisis Leading Indicator Analysis", fontsize=14)
+    ax1.set_title("Spectral Gap vs VIX: Concurrent Characterization", fontsize=14)
     ax1.legend(loc="upper left")
     fig.tight_layout()
 
@@ -840,6 +840,272 @@ def figS8_singular_values(
     _save_figure(fig, figures_dir / "supplemental", "figS8_singular_values")
 
 
+def figS9_gallavotti_cohen(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S9: Gallavotti-Cohen symmetry function."""
+    gc_data = _load_json(results_dir / "gallavotti_cohen_symmetry.json")
+    if gc_data is None:
+        return
+
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    s_vals = np.array(gc_data["s_values"])
+    zeta = np.array(gc_data["zeta"])
+    slope = gc_data["slope"]
+    intercept = gc_data["intercept"]
+    r2 = gc_data["r_squared"]
+
+    # Filter out NaN/Inf values from histogram-based estimate
+    mask = np.isfinite(zeta)
+    s_vals = s_vals[mask]
+    zeta = zeta[mask]
+
+    if len(s_vals) == 0:
+        logger.warning("Skipping Fig S9: no valid GC data points.")
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(s_vals, zeta, s=20, color="steelblue", alpha=0.7, label="Data")
+    s_range = np.linspace(s_vals.min(), s_vals.max(), 100)
+    ax.plot(s_range, s_range, "k--", linewidth=1, label="Ideal: $\\zeta(s) = s$")
+    ax.plot(s_range, slope * s_range + intercept, "r-", linewidth=1.5,
+            label=f"Fit: slope={slope:.3f}, $R^2$={r2:.3f}")
+    ax.set_xlabel("$s$ (entropy production)", fontsize=12)
+    ax.set_ylabel("$\\zeta(s) = \\frac{1}{\\tau}\\ln\\frac{P(+s)}{P(-s)}$", fontsize=12)
+    ax.set_title("Gallavotti-Cohen Symmetry Function", fontsize=14)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+
+    _save_figure(fig, figures_dir / "supplemental", "figS9_gallavotti_cohen")
+
+
+def figS10_ck_convergence(
+    stat_tests: Optional[dict],
+    figures_dir: Path,
+) -> None:
+    """Figure S10: Chapman-Kolmogorov error vs tau (convergence analysis)."""
+    if stat_tests is None:
+        return
+
+    ck_conv = stat_tests.get("ck_convergence")
+    if ck_conv is None or "error" in ck_conv:
+        return
+
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    tau_values = ck_conv["tau_values"]
+    ck_errors = ck_conv["ck_errors"]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(tau_values, ck_errors, "o-", color="steelblue", markersize=8, linewidth=2)
+    ax.axhline(0.1, color="seagreen", linestyle="--", linewidth=1, alpha=0.7, label="Good (< 0.1)")
+    ax.axhline(0.2, color="goldenrod", linestyle="--", linewidth=1, alpha=0.7, label="Approximate (< 0.2)")
+    best_tau = ck_conv.get("best_tau")
+    if best_tau is not None:
+        ax.axvline(best_tau, color="firebrick", linestyle=":", linewidth=1,
+                   alpha=0.5, label=f"Best $\\tau$={best_tau}")
+    ax.set_xlabel("Lag $\\tau$ (days)", fontsize=12)
+    ax.set_ylabel("Mean CK Error", fontsize=12)
+    ax.set_title("Chapman-Kolmogorov Consistency vs Lag", fontsize=14)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+
+    _save_figure(fig, figures_dir / "supplemental", "figS10_ck_convergence")
+
+
+def figS11_entropy_convergence(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S11: Spectral entropy vs K (number of modes)."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    for mode in ["univariate", "multiasset"]:
+        conv_data = _load_json(results_dir / f"entropy_convergence_{mode}.json")
+        if conv_data is None:
+            continue
+
+        k_vals = conv_data["k_values"]
+        s_entropy = conv_data["spectral_entropies"]
+        emp_est = conv_data["empirical_estimate"]
+        emp_ci_lo = conv_data.get("empirical_ci_lower")
+        emp_ci_hi = conv_data.get("empirical_ci_upper")
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(k_vals, s_entropy, "o-", color="steelblue", markersize=8,
+                linewidth=2, label="Spectral $\\sum_k \\omega_k^2 A_k / \\gamma_k$")
+        ax.axhline(emp_est, color="firebrick", linestyle="--", linewidth=1.5,
+                   label=f"Empirical (KDE): {emp_est:.2f}")
+        if emp_ci_lo is not None and emp_ci_hi is not None:
+            ax.axhspan(emp_ci_lo, emp_ci_hi, alpha=0.1, color="firebrick")
+        ax.set_xlabel("Number of modes $K$", fontsize=12)
+        ax.set_ylabel("Entropy production (bits/day)", fontsize=12)
+        ax.set_title(f"Entropy Convergence ({mode})", fontsize=14)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+
+        _save_figure(fig, figures_dir / "supplemental", f"figS11_entropy_convergence_{mode}")
+
+
+def figS12_cv_results(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S12: Walk-forward CV fold-by-fold metrics."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    for mode in ["univariate", "multiasset"]:
+        cv_data = _load_json(results_dir / f"cv_results_{mode}.json")
+        if cv_data is None:
+            continue
+
+        folds = cv_data.get("folds", [])
+        if not folds:
+            continue
+
+        metrics = ["vamp2", "spectral_gap", "db_violation"]
+        available = [m for m in metrics if m in folds[0]]
+        if not available:
+            continue
+
+        fig, axes = plt.subplots(1, len(available), figsize=(5 * len(available), 5))
+        if len(available) == 1:
+            axes = [axes]
+
+        for ax, metric in zip(axes, available):
+            vals = [f[metric] for f in folds if metric in f]
+            fold_ids = list(range(1, len(vals) + 1))
+            ax.bar(fold_ids, vals, color="steelblue", edgecolor="navy", linewidth=0.5)
+            mean_val = float(np.mean(vals))
+            ax.axhline(mean_val, color="firebrick", linestyle="--", linewidth=1,
+                       label=f"Mean: {mean_val:.4f}")
+            ax.set_xlabel("Fold")
+            ax.set_ylabel(metric)
+            ax.set_title(metric.replace("_", " ").title())
+            ax.legend()
+            ax.grid(True, alpha=0.3, axis="y")
+
+        fig.suptitle(f"Walk-Forward CV ({mode}, {len(folds)} folds)", fontsize=14, y=1.02)
+        fig.tight_layout()
+
+        _save_figure(fig, figures_dir / "supplemental", f"figS12_cv_results_{mode}")
+
+
+def figS13_multiseed(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S13: Multi-seed result distributions."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    # Try unified multi_seed_summary.json (notebook format)
+    ms_all = _load_json(results_dir / "multi_seed_summary.json")
+
+    for mode in ["univariate", "multiasset"]:
+        # Try per-mode file first, then unified file
+        ms_data = _load_json(results_dir / f"multiseed_summary_{mode}.json")
+
+        if ms_data is None and ms_all is not None and mode in ms_all:
+            ms_data = ms_all[mode]
+
+        if ms_data is None:
+            continue
+
+        # Extract mean/std metrics (notebook format: key_mean / key_std)
+        metric_names = []
+        means = []
+        stds = []
+        for key in ms_data:
+            if key.endswith("_mean") and key != "n_seeds":
+                base = key[:-5]  # strip "_mean"
+                std_key = f"{base}_std"
+                if std_key in ms_data:
+                    metric_names.append(base.replace("_", " ").title()[:20])
+                    means.append(float(ms_data[key]))
+                    stds.append(float(ms_data[std_key]))
+
+        # Also handle {"metrics": {...}} format
+        if not metric_names:
+            metrics = ms_data.get("metrics", {})
+            for m, vals in metrics.items():
+                if isinstance(vals, dict) and "mean" in vals:
+                    metric_names.append(m[:20])
+                    means.append(vals["mean"])
+                    stds.append(vals.get("std", 0))
+
+        if not metric_names:
+            continue
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        x = np.arange(len(metric_names))
+        ax.bar(x, means, yerr=stds, capsize=4, color="steelblue",
+               edgecolor="navy", linewidth=0.5, ecolor="firebrick")
+        ax.set_xticks(x)
+        ax.set_xticklabels(metric_names, rotation=30, ha="right", fontsize=9)
+        ax.set_ylabel("Value")
+        ax.set_title(f"Multi-Seed Results ({mode}, mean $\\pm$ std)", fontsize=14)
+        ax.grid(True, alpha=0.3, axis="y")
+        fig.tight_layout()
+
+        _save_figure(fig, figures_dir / "supplemental", f"figS13_multiseed_{mode}")
+
+
+def figS14_crisis_prediction(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S14: Out-of-sample crisis prediction AUROC comparison."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    pred = _load_json(results_dir / "crisis_prediction.json")
+    if pred is None or pred.get("prediction") != "completed":
+        logger.info("figS14: skipped (no crisis prediction results)")
+        return
+
+    auroc_spectral = pred["auroc_spectral"]
+    auroc_vix = pred.get("auroc_vix_baseline")
+
+    labels = ["KTND Spectral"]
+    values = [auroc_spectral]
+    colors = ["steelblue"]
+
+    if auroc_vix is not None:
+        labels.append("VIX Level")
+        values.append(auroc_vix)
+        colors.append("coral")
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    bars = ax.bar(labels, values, color=colors, edgecolor="black", linewidth=0.5,
+                  width=0.5)
+
+    ax.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, label="Random (0.5)")
+    ax.set_ylabel("AUROC")
+    ax.set_title(f"Out-of-Sample Crisis Prediction\n"
+                 f"(expanding window, {pred['horizon_days']}-day horizon, "
+                 f"n={pred['n_oos_windows']})", fontsize=12)
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
+                f"{val:.3f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
+
+    fig.tight_layout()
+    _save_figure(fig, figures_dir / "supplemental", "figS14_crisis_prediction")
+
+
 # =====================================================================
 # CLI
 # =====================================================================
@@ -911,6 +1177,12 @@ def main() -> None:
     figS6_permutation_null(stat_tests, figures_dir)
     figS7_baseline_regimes(baseline_labels, figures_dir)
     figS8_singular_values(analysis_results, figures_dir)
+    figS9_gallavotti_cohen(results_dir, figures_dir)
+    figS10_ck_convergence(stat_tests, figures_dir)
+    figS11_entropy_convergence(results_dir, figures_dir)
+    figS12_cv_results(results_dir, figures_dir)
+    figS13_multiseed(results_dir, figures_dir)
+    figS14_crisis_prediction(results_dir, figures_dir)
 
     # ----- Summary -----
     generated = list(figures_dir.glob("*.pdf")) + list((figures_dir / "supplemental").glob("*.pdf"))

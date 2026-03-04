@@ -12,6 +12,7 @@ model:
   n_modes: 15
 
 data:
+  embedding_dim: 2  # 11 tickers × 2 = 22 dims (cross-sectional structure suffices)
   tickers:
     - SPY   # S&P 500
     - QQQ   # Nasdaq 100

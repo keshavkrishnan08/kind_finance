@@ -48,6 +48,7 @@ from src.baselines.dmd import DMDBaseline
 from src.baselines.pca import PCABaseline
 from src.baselines.garch import GARCHBaseline
 from src.baselines.threshold import VIXThresholdBaseline
+from src.baselines.lstm_ae import LSTMBaselineDetector
 from src.analysis.regime import RegimeDetector
 
 logger = logging.getLogger(__name__)
@@ -389,6 +390,51 @@ def run_vix_baseline(
     }
 
 
+def run_lstm_baseline(
+    train_returns: np.ndarray,
+    test_returns: np.ndarray,
+    full_returns: np.ndarray,
+    dates: pd.DatetimeIndex,
+    sequence_length: int = 20,
+    hidden_dim: int = 32,
+    latent_dim: int = 8,
+    n_epochs: int = 100,
+) -> Dict[str, Any]:
+    """Fit LSTM autoencoder and evaluate regime detection."""
+    logger.info("Fitting LSTM autoencoder baseline ...")
+    t0 = time.time()
+
+    detector = LSTMBaselineDetector(
+        sequence_length=sequence_length,
+        hidden_dim=hidden_dim,
+        latent_dim=latent_dim,
+        n_epochs=n_epochs,
+    )
+    detector.fit(train_returns)
+    full_labels = detector.detect_regimes(full_returns)
+    elapsed = time.time() - t0
+
+    nber_results = RegimeDetector.compare_with_nber(full_labels, dates)
+    timing = compute_regime_timing(full_labels, dates)
+
+    return {
+        "method": "LSTM_AE",
+        "sequence_length": sequence_length,
+        "hidden_dim": hidden_dim,
+        "latent_dim": latent_dim,
+        "nber_accuracy": nber_results["accuracy"],
+        "nber_precision": nber_results["precision"],
+        "nber_recall": nber_results["recall"],
+        "nber_f1": nber_results["f1"],
+        "n_transitions": timing["n_transitions"],
+        "mean_regime_duration": timing["mean_regime_duration"],
+        "gfc_lead_days": timing.get("gfc_lead_days"),
+        "covid_lead_days": timing.get("covid_lead_days"),
+        "elapsed_sec": elapsed,
+        "regime_labels": full_labels,
+    }
+
+
 # =====================================================================
 # CLI
 # =====================================================================
@@ -487,6 +533,16 @@ def main() -> None:
             all_results.append(vix_result)
     except Exception as e:
         logger.error("VIX threshold baseline failed: %s", e)
+
+    # 6. LSTM Autoencoder
+    try:
+        lstm_result = run_lstm_baseline(
+            train_returns, test_returns, full_returns, dates,
+            sequence_length=20, hidden_dim=32, latent_dim=8,
+        )
+        all_results.append(lstm_result)
+    except Exception as e:
+        logger.error("LSTM autoencoder baseline failed: %s", e, exc_info=True)
 
     # ----- Build comparison table -----
     # Extract serializable columns (exclude ndarray regime_labels)
