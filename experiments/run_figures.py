@@ -479,14 +479,20 @@ def fig8_chapman_kolmogorov(
         logger.warning("Skipping Fig 8: no CK error data.")
         return
 
-    steps = [e["n"] for e in ck_errors]
-    errors = [e["error"] for e in ck_errors]
+    try:
+        steps = [e["n"] for e in ck_errors]
+        errors = [e["error"] for e in ck_errors]
+    except (KeyError, TypeError):
+        logger.warning("Skipping Fig 8: malformed CK error data.")
+        return
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.bar(steps, errors, color="steelblue", edgecolor="navy", linewidth=0.5)
     ax.set_xlabel("$n$ (multiples of $\\tau$)", fontsize=12)
     ax.set_ylabel("Mean |$\\lambda$ error|", fontsize=12)
-    ax.set_title(f"Chapman-Kolmogorov Consistency (p={ck.get('p_value', 'N/A'):.4f})",
+    ck_p = ck.get('p_value')
+    ck_p_str = f"{ck_p:.4f}" if isinstance(ck_p, (int, float)) else "N/A"
+    ax.set_title(f"Chapman-Kolmogorov Consistency (p={ck_p_str})",
                  fontsize=14)
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
@@ -512,10 +518,14 @@ def fig9_bootstrap_ci(
         logger.warning("Skipping Fig 9: no bootstrap CI data.")
         return
 
-    mode_idx = [m["mode"] for m in modes]
-    means = [m["mean_magnitude"] for m in modes]
-    ci_lower = [m["ci_lower"] for m in modes]
-    ci_upper = [m["ci_upper"] for m in modes]
+    try:
+        mode_idx = [m["mode"] for m in modes]
+        means = [m["mean_magnitude"] for m in modes]
+        ci_lower = [m["ci_lower"] for m in modes]
+        ci_upper = [m["ci_upper"] for m in modes]
+    except (KeyError, TypeError):
+        logger.warning("Skipping Fig 9: malformed bootstrap CI data.")
+        return
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.errorbar(mode_idx, means,
@@ -736,7 +746,7 @@ def figS6_permutation_null(
     null_std = perm.get("null_std")
     p_value = perm.get("p_value")
 
-    if observed is None or null_mean is None:
+    if observed is None or null_mean is None or null_std is None or null_std == 0:
         logger.warning("Skipping Fig S6: permutation test data incomplete.")
         return
 
@@ -750,7 +760,7 @@ def figS6_permutation_null(
     ax.plot(x_null, y_null, color="steelblue", linewidth=1)
 
     ax.axvline(x=observed, color="firebrick", linewidth=2,
-               linestyle="--", label=f"Observed (p={p_value:.4f})")
+               linestyle="--", label=f"Observed (p={p_value:.4f})" if p_value is not None else "Observed")
     ax.set_xlabel("Mean Irreversibility $\\langle I(x) \\rangle$", fontsize=12)
     ax.set_ylabel("Density", fontsize=12)
     ax.set_title("Permutation Test for Time-Irreversibility", fontsize=14)
@@ -852,11 +862,15 @@ def figS9_gallavotti_cohen(
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
-    s_vals = np.array(gc_data["s_values"])
-    zeta = np.array(gc_data["zeta"])
-    slope = gc_data["slope"]
-    intercept = gc_data["intercept"]
-    r2 = gc_data["r_squared"]
+    try:
+        s_vals = np.array(gc_data["s_values"])
+        zeta = np.array(gc_data["zeta"])
+        slope = gc_data["slope"]
+        intercept = gc_data["intercept"]
+        r2 = gc_data["r_squared"]
+    except (KeyError, TypeError) as e:
+        logger.warning("Skipping Fig S9: incomplete GC data (%s)", e)
+        return
 
     # Filter out NaN/Inf values from histogram-based estimate
     mask = np.isfinite(zeta)
@@ -898,8 +912,10 @@ def figS10_ck_convergence(
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
-    tau_values = ck_conv["tau_values"]
-    ck_errors = ck_conv["ck_errors"]
+    tau_values = ck_conv.get("tau_values")
+    ck_errors = ck_conv.get("ck_errors")
+    if tau_values is None or ck_errors is None:
+        return
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(tau_values, ck_errors, "o-", color="steelblue", markersize=8, linewidth=2)
@@ -932,9 +948,11 @@ def figS11_entropy_convergence(
         if conv_data is None:
             continue
 
-        k_vals = conv_data["k_values"]
-        s_entropy = conv_data["spectral_entropies"]
-        emp_est = conv_data["empirical_estimate"]
+        k_vals = conv_data.get("k_values")
+        s_entropy = conv_data.get("spectral_entropies")
+        emp_est = conv_data.get("empirical_estimate")
+        if k_vals is None or s_entropy is None or emp_est is None:
+            continue
         emp_ci_lo = conv_data.get("empirical_ci_lower")
         emp_ci_hi = conv_data.get("empirical_ci_upper")
 
@@ -1073,7 +1091,10 @@ def figS14_crisis_prediction(
         logger.info("figS14: skipped (no crisis prediction results)")
         return
 
-    auroc_spectral = pred["auroc_spectral"]
+    auroc_spectral = pred.get("auroc_spectral")
+    if auroc_spectral is None:
+        logger.info("figS14: skipped (no auroc_spectral in results)")
+        return
     auroc_vix = pred.get("auroc_vix_baseline")
 
     labels = ["KTND Spectral"]
@@ -1091,9 +1112,11 @@ def figS14_crisis_prediction(
 
     ax.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, label="Random (0.5)")
     ax.set_ylabel("AUROC")
+    horizon = pred.get('horizon_days', '?')
+    n_oos = pred.get('n_oos_windows', '?')
     ax.set_title(f"Out-of-Sample Crisis Prediction\n"
-                 f"(expanding window, {pred['horizon_days']}-day horizon, "
-                 f"n={pred['n_oos_windows']})", fontsize=12)
+                 f"(expanding window, {horizon}-day horizon, "
+                 f"n={n_oos})", fontsize=12)
     ax.set_ylim(0, 1.05)
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3, axis="y")

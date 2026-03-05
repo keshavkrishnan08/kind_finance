@@ -278,7 +278,7 @@ def main() -> None:
 
     out_path = output_dir / f"entropy_convergence_{args.mode}.json"
     with open(out_path, "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(summary, f, indent=2, allow_nan=True)
 
     print("\n" + "=" * 70)
     print("Entropy Convergence Analysis")
