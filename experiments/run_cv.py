@@ -156,10 +156,20 @@ def train_fold(
     # Build model
     model_cfg = config.get("model", {})
     input_dim = embedded.shape[1]
+    n_modes = model_cfg.get("n_modes", 10)
+
+    # Cap n_modes for CV: with limited fold data and high-dim input,
+    # too many modes cause degenerate covariance → K zeroed out.
+    # Rule: n_modes <= input_dim // 2, and at most 10 for CV stability.
+    n_modes_cv = min(n_modes, max(input_dim // 2, 3), 10)
+    if n_modes_cv != n_modes:
+        logger.info("CV: capping n_modes from %d to %d (input_dim=%d)",
+                     n_modes, n_modes_cv, input_dim)
+
     model = NonEquilibriumVAMPNet(
         input_dim=input_dim,
         hidden_dims=model_cfg.get("hidden_dims", [128, 128, 64]),
-        output_dim=model_cfg.get("n_modes", 10),
+        output_dim=n_modes_cv,
         dropout=model_cfg.get("dropout", 0.1),
         epsilon=model_cfg.get("epsilon", 1e-6),
     ).to(device)
