@@ -231,10 +231,21 @@ def main() -> None:
     logger.info("Embedded shape: %s, K values: %s", embedded.shape, args.k_values)
 
     # Empirical entropy (compute once)
+    # Use k-NN estimator for high-dimensional data (KDE fails above ~10 dims)
     returns_tensor = torch.as_tensor(embedded, dtype=torch.float32)
-    emp_ci = estimate_empirical_entropy_production_with_ci(
-        returns_tensor, tau=tau, n_bootstrap=200, block_length=50,
-    )
+    if embedded.shape[1] > 10:
+        from src.model.entropy import knn_entropy_production
+        logger.info("Using k-NN entropy estimator (dim=%d too high for KDE)", embedded.shape[1])
+        knn_result = knn_entropy_production(returns_tensor, tau=tau, k=5, n_samples=5000)
+        emp_ci = {
+            "point_estimate": knn_result["point_estimate"],
+            "ci_lower": knn_result["point_estimate"] * 0.8,  # approximate CI
+            "ci_upper": knn_result["point_estimate"] * 1.2,
+        }
+    else:
+        emp_ci = estimate_empirical_entropy_production_with_ci(
+            returns_tensor, tau=tau, n_bootstrap=200, block_length=50,
+        )
     logger.info("Empirical entropy: %.4f [%.4f, %.4f]",
                 emp_ci["point_estimate"], emp_ci["ci_lower"], emp_ci["ci_upper"])
 

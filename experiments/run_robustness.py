@@ -465,7 +465,9 @@ def permutation_test_irreversibility(
     null_arr = null_arr[valid_mask]
 
     if n_valid == 0:
-        return {
+        # All IAAFT surrogates failed — fall back to PCA-projected test
+        # for high-dimensional data where IAAFT is unreliable
+        fallback_result = {
             "test": "Permutation_Irreversibility",
             "surrogate_method": "IAAFT",
             "observed_mean_irreversibility": mean_irrev_observed,
@@ -479,6 +481,71 @@ def permutation_test_irreversibility(
             "significant_at_005": False,
             "significant_at_001": False,
         }
+
+        # PCA-projected model-free test as primary when IAAFT fails
+        if embedded.shape[1] > 5:
+            try:
+                from sklearn.decomposition import PCA as _PCA
+                n_pca = min(10, embedded.shape[1])
+                pca = _PCA(n_components=n_pca)
+                x_pca = pca.fit_transform(embedded)
+                var_explained = float(pca.explained_variance_ratio_.sum())
+                logger.info(
+                    "IAAFT failed; using PCA-projected test: %d -> %d dims (%.1f%% var)",
+                    embedded.shape[1], n_pca, 100 * var_explained,
+                )
+
+                x_t_pca = x_pca[:-tau]
+                x_tau_pca = x_pca[tau:]
+                observed_asym = float(np.mean(np.abs(
+                    np.mean(x_tau_pca ** 2 * x_t_pca - x_t_pca ** 2 * x_tau_pca, axis=0)
+                )))
+
+                rng_pca = np.random.default_rng(43)
+                null_asyms: List[float] = []
+                n_pca_perms = min(n_permutations, 500)
+                for _ in range(n_pca_perms):
+                    surr = iaaft_surrogate(x_pca, n_samples=1, max_iter=100, rng=rng_pca)[0]
+                    s_t, s_tau = surr[:-tau], surr[tau:]
+                    null_asyms.append(float(np.mean(np.abs(
+                        np.mean(s_tau ** 2 * s_t - s_t ** 2 * s_tau, axis=0)
+                    ))))
+                null_pca = np.array(null_asyms)
+                valid_pca = null_pca[~np.isnan(null_pca)]
+                if len(valid_pca) > 0:
+                    pca_p = float(np.mean(valid_pca >= observed_asym))
+                    pca_std = float(np.std(valid_pca))
+                    pca_d = float((observed_asym - np.mean(valid_pca)) / max(pca_std, 1e-15))
+
+                    # Promote PCA results to primary fields
+                    fallback_result["surrogate_method"] = "IAAFT_PCA_fallback"
+                    fallback_result["p_value"] = pca_p
+                    fallback_result["cohens_d"] = pca_d
+                    fallback_result["effect_size"] = (
+                        "large" if abs(pca_d) >= 0.8 else
+                        "medium" if abs(pca_d) >= 0.5 else
+                        "small" if abs(pca_d) >= 0.2 else "negligible"
+                    )
+                    fallback_result["significant_at_005"] = pca_p < 0.05
+                    fallback_result["significant_at_001"] = pca_p < 0.01
+                    fallback_result["n_valid_surrogates"] = len(valid_pca)
+                    fallback_result["pca_projected_permutation"] = {
+                        "n_pca_components": n_pca,
+                        "variance_explained": var_explained,
+                        "p_value": pca_p,
+                        "cohens_d": pca_d,
+                        "observed_asymmetry": observed_asym,
+                        "null_mean": float(np.mean(valid_pca)),
+                        "null_std": pca_std,
+                        "n_permutations": n_pca_perms,
+                    }
+                    logger.info(
+                        "PCA fallback: p=%.4f, d=%.2f", pca_p, pca_d,
+                    )
+            except Exception as e:
+                logger.warning("PCA fallback also failed: %s", e)
+
+        return fallback_result
 
     p_value = float(np.mean(null_arr >= mean_irrev_observed))
 
