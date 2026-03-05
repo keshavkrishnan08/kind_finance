@@ -608,6 +608,9 @@ def permutation_test_irreversibility(
                     np.mean(s_tau ** 2 * s_t - s_t ** 2 * s_tau, axis=0)
                 ))))
             null_pca = np.array(null_asyms)
+            null_pca = null_pca[~np.isnan(null_pca)]  # filter NaN surrogates
+            if len(null_pca) == 0:
+                raise ValueError("All PCA surrogates produced NaN")
             pca_p = float(np.mean(null_pca >= observed_asym))
             pca_std = float(np.std(null_pca))
             pca_d = float((observed_asym - np.mean(null_pca)) / max(pca_std, 1e-15))
@@ -1218,7 +1221,7 @@ def main() -> None:
     suffix = f"_{args.mode}" if args.mode != "univariate" else ""
     results_path = output_dir / f"statistical_tests{suffix}.json"
     with open(results_path, "w") as f:
-        json.dump(all_tests, f, indent=2, default=str)
+        json.dump(all_tests, f, indent=2, default=str, allow_nan=True)
 
     # ---- Print summary ----
     print("\n" + "=" * 70)

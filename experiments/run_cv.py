@@ -393,7 +393,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     cv_path = output_dir / f"cv_results_{args.mode}.json"
     with open(cv_path, "w") as f:
-        json.dump(summary, f, indent=2, default=str)
+        json.dump(summary, f, indent=2, default=str, allow_nan=True)
 
     # Print summary
     print("\n" + "=" * 70)

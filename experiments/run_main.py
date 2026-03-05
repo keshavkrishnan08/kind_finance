@@ -495,13 +495,18 @@ def post_training_analysis(
     v_np = v.cpu().numpy()
 
     # --- Irreversibility field (prefer eigendecomposition, fall back to SVD) ---
-    irrev_field_eig = model.compute_irreversibility_field_eig(x_all, out)
-    if irrev_field_eig is not None:
-        irrev_field = irrev_field_eig.cpu().numpy()
-        irrev_method = "eigendecomposition"
-    else:
-        irrev_field = model.compute_irreversibility_field(x_all, out).cpu().numpy()
-        irrev_method = "svd_fallback"
+    try:
+        irrev_field_eig = model.compute_irreversibility_field_eig(x_all, out)
+        if irrev_field_eig is not None:
+            irrev_field = irrev_field_eig.cpu().numpy()
+            irrev_method = "eigendecomposition"
+        else:
+            irrev_field = model.compute_irreversibility_field(x_all, out).cpu().numpy()
+            irrev_method = "svd_fallback"
+    except Exception as e:
+        logger.warning("Irreversibility field computation failed: %s", e)
+        irrev_field = np.zeros(len(embedded))
+        irrev_method = "failed"
     logger.info("Irreversibility field computed via %s", irrev_method)
 
     # --- Spectral gap (continuous-time: |Re(ln lambda_2)| / tau) ---
@@ -554,7 +559,7 @@ def post_training_analysis(
     # --- Relaxation times ---
     decay_rates = -np.log(np.clip(magnitudes, 1e-15, None)) / tau
     with np.errstate(divide="ignore"):
-        relaxation_times = np.where(decay_rates > 1e-15, 1.0 / decay_rates, np.inf)
+        relaxation_times = np.where(decay_rates > 1e-15, 1.0 / decay_rates, 1e15)
 
     # --- Non-equilibrium diagnostics (zero-GPU, post-hoc) ---
     neq_results = {}
@@ -609,7 +614,7 @@ def post_training_analysis(
             "r_squared": gc_result["r_squared"],
         }
         with open(output_dir / "gallavotti_cohen_symmetry.json", "w") as f:
-            json.dump(gc_data, f, indent=2)
+            json.dump(gc_data, f, indent=2, allow_nan=True)
     else:
         ft_result = fluctuation_theorem_ratio(ep_samples)
         neq_results["fluctuation_theorem_ratio"] = ft_result["mean_exp_neg_sigma"]
@@ -692,8 +697,8 @@ def post_training_analysis(
         "entropy_std_error": entropy_ci["std_error"],
         "entropy_knn": knn_result["point_estimate"],
         "entropy_knn_k": knn_result["k"],
-        "mean_irreversibility": float(np.mean(irrev_field)),
-        "max_irreversibility": float(np.max(irrev_field)),
+        "mean_irreversibility": float(np.nanmean(irrev_field)),
+        "max_irreversibility": float(np.nanmax(irrev_field)) if len(irrev_field) > 0 else 0.0,
         "irrev_method": irrev_method,
         "relaxation_times": relaxation_times.tolist(),
         "n_modes": len(eigenvalues_sorted),
@@ -710,12 +715,12 @@ def post_training_analysis(
     # Save all results as JSON (both generic and mode-specific)
     results_path = output_dir / "analysis_results.json"
     with open(results_path, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent=2, default=str, allow_nan=True)
     # Also save a mode-specific copy so multiasset doesn't overwrite univariate
     mode = config.get("_mode", "unknown")
     mode_results_path = output_dir / f"analysis_results_{mode}.json"
     with open(mode_results_path, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent=2, default=str, allow_nan=True)
     logger.info("Analysis results saved to %s and %s", results_path, mode_results_path)
 
     return results
@@ -861,10 +866,10 @@ def main() -> None:
     # Re-save results with VAMP-2 included
     results_path = results_dir / "analysis_results.json"
     with open(results_path, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent=2, default=str, allow_nan=True)
     mode_results_path = results_dir / f"analysis_results_{args.mode}.json"
     with open(mode_results_path, "w") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump(results, f, indent=2, default=str, allow_nan=True)
 
     # ----- Print summary -----
     print("\n" + "=" * 70)

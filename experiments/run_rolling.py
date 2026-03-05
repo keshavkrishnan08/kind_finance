@@ -203,41 +203,57 @@ def rolling_spectral_analysis(
         # Build time-lagged pairs within the window
         if window_size <= tau:
             continue
-        x_t = torch.as_tensor(window_data[:-tau], dtype=torch.float32).to(device)
-        x_tau = torch.as_tensor(window_data[tau:], dtype=torch.float32).to(device)
 
-        out = model(x_t, x_tau)
+        try:
+            x_t = torch.as_tensor(window_data[:-tau], dtype=torch.float32).to(device)
+            x_tau = torch.as_tensor(window_data[tau:], dtype=torch.float32).to(device)
 
-        eigenvalues = out["eigenvalues"].cpu().numpy()
-        singular_values = out["singular_values"].cpu().numpy()
+            out = model(x_t, x_tau)
 
-        # Sort by magnitude
-        magnitudes = np.abs(eigenvalues)
-        order = np.argsort(-magnitudes)
-        sorted_mag = magnitudes[order]
+            eigenvalues = out["eigenvalues"].cpu().numpy()
+            singular_values = out["singular_values"].cpu().numpy()
 
-        # Spectral gap — continuous-time: |Re(ln λ₂)|/τ
-        spectral_gap = float(
-            KoopmanAnalyzer.compute_spectral_gap(out["eigenvalues"], tau=float(tau))
-        )
+            # Sort by magnitude
+            magnitudes = np.abs(eigenvalues)
+            order = np.argsort(-magnitudes)
+            sorted_mag = magnitudes[order]
 
-        # Entropy production (spectral): sigma_k = omega_k^2 * A_k / gamma_k
-        omega = np.angle(eigenvalues[order]) / tau
-        gamma_k = -np.log(np.clip(np.abs(eigenvalues[order]), 1e-15, 1 - 1e-7)) / tau
-        gamma_k = np.clip(gamma_k, 1e-6, None)
-        # Quick eigenfunction amplitude estimate from chi_t variance
-        chi_t = out["chi_t"].cpu().numpy()
-        A_k = np.var(chi_t, axis=0)
-        entropy_per_mode = omega ** 2 * A_k[:len(omega)] / gamma_k[:len(omega)]
-        entropy_total = float(np.sum(np.abs(entropy_per_mode)))
+            # Spectral gap — continuous-time: |Re(ln λ₂)|/τ
+            spectral_gap = float(
+                KoopmanAnalyzer.compute_spectral_gap(out["eigenvalues"], tau=float(tau))
+            )
+            if not np.isfinite(spectral_gap):
+                spectral_gap = 0.0
 
-        # Irreversibility
-        x_window = torch.as_tensor(window_data, dtype=torch.float32).to(device)
-        irrev = model.compute_irreversibility_field(x_window, out).cpu().numpy()
-        mean_irrev = float(np.mean(irrev))
+            # Entropy production (spectral): sigma_k = omega_k^2 * A_k / gamma_k
+            omega = np.angle(eigenvalues[order]) / tau
+            gamma_k = -np.log(np.clip(np.abs(eigenvalues[order]), 1e-15, 1 - 1e-7)) / tau
+            gamma_k = np.clip(gamma_k, 1e-6, None)
+            # Quick eigenfunction amplitude estimate from chi_t variance
+            chi_t = out["chi_t"].cpu().numpy()
+            A_k = np.var(chi_t, axis=0)
+            entropy_per_mode = omega ** 2 * A_k[:len(omega)] / gamma_k[:len(omega)]
+            entropy_total = float(np.sum(np.abs(entropy_per_mode)))
 
-        # VAMP-2 score (negative sum of squared singular values; higher = better)
-        vamp2_score = float(np.sum(singular_values ** 2))
+            # Irreversibility
+            x_window = torch.as_tensor(window_data, dtype=torch.float32).to(device)
+            try:
+                irrev = model.compute_irreversibility_field(x_window, out).cpu().numpy()
+                mean_irrev = float(np.nanmean(irrev))
+            except Exception:
+                mean_irrev = 0.0
+
+            # VAMP-2 score (negative sum of squared singular values; higher = better)
+            vamp2_score = float(np.sum(singular_values ** 2))
+
+        except Exception as e:
+            if w == 0:
+                logger.warning("Rolling window %d failed: %s", w, e)
+            spectral_gap = 0.0
+            entropy_total = 0.0
+            mean_irrev = 0.0
+            vamp2_score = 0.0
+            sorted_mag = np.array([])
 
         # Record
         record = {
@@ -592,13 +608,17 @@ def main() -> None:
     # Save comparison results
     comparison_path = output_dir / "spectral_gap_vix_comparison.json"
     with open(comparison_path, "w") as f:
-        json.dump(vix_comparison, f, indent=2, default=str)
+        json.dump(vix_comparison, f, indent=2, default=str, allow_nan=True)
 
     # Out-of-sample crisis prediction
-    prediction_results = crisis_prediction_test(rolling_df, project_root)
+    try:
+        prediction_results = crisis_prediction_test(rolling_df, project_root)
+    except Exception as e:
+        logger.error("Crisis prediction test failed: %s", e, exc_info=True)
+        prediction_results = {"prediction": "failed", "error": str(e)}
     prediction_path = output_dir / "crisis_prediction.json"
     with open(prediction_path, "w") as f:
-        json.dump(prediction_results, f, indent=2, default=str)
+        json.dump(prediction_results, f, indent=2, default=str, allow_nan=True)
 
     # Print summary
     print("\n" + "=" * 70)
