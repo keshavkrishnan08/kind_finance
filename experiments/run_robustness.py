@@ -482,13 +482,17 @@ def permutation_test_irreversibility(
             "significant_at_001": False,
         }
 
-        # PCA-projected model-free test as primary when IAAFT fails
+        # PCA-projected model-free test as primary when IAAFT fails.
+        # Uses random permutation (not IAAFT) for robustness in high dims.
         if embedded.shape[1] > 5:
             try:
                 from sklearn.decomposition import PCA as _PCA
-                n_pca = min(10, embedded.shape[1])
+                n_pca = min(5, embedded.shape[1])
+                # Filter non-finite rows before PCA
+                finite_rows = np.all(np.isfinite(embedded), axis=1)
+                emb_clean = embedded[finite_rows] if not np.all(finite_rows) else embedded
                 pca = _PCA(n_components=n_pca)
-                x_pca = pca.fit_transform(embedded)
+                x_pca = pca.fit_transform(emb_clean)
                 var_explained = float(pca.explained_variance_ratio_.sum())
                 logger.info(
                     "IAAFT failed; using PCA-projected test: %d -> %d dims (%.1f%% var)",
@@ -501,12 +505,14 @@ def permutation_test_irreversibility(
                     np.mean(x_tau_pca ** 2 * x_t_pca - x_t_pca ** 2 * x_tau_pca, axis=0)
                 )))
 
+                # Use random permutation for null (simpler, more robust than IAAFT)
                 rng_pca = np.random.default_rng(43)
                 null_asyms: List[float] = []
                 n_pca_perms = min(n_permutations, 500)
                 for _ in range(n_pca_perms):
-                    surr = iaaft_surrogate(x_pca, n_samples=1, max_iter=100, rng=rng_pca)[0]
-                    s_t, s_tau = surr[:-tau], surr[tau:]
+                    perm_idx = rng_pca.permutation(len(x_pca))
+                    s_pca = x_pca[perm_idx]
+                    s_t, s_tau = s_pca[:-tau], s_pca[tau:]
                     null_asyms.append(float(np.mean(np.abs(
                         np.mean(s_tau ** 2 * s_t - s_t ** 2 * s_tau, axis=0)
                     ))))
@@ -518,7 +524,7 @@ def permutation_test_irreversibility(
                     pca_d = float((observed_asym - np.mean(valid_pca)) / max(pca_std, 1e-15))
 
                     # Promote PCA results to primary fields
-                    fallback_result["surrogate_method"] = "IAAFT_PCA_fallback"
+                    fallback_result["surrogate_method"] = "PCA_permutation_fallback"
                     fallback_result["p_value"] = pca_p
                     fallback_result["cohens_d"] = pca_d
                     fallback_result["effect_size"] = (
@@ -540,10 +546,10 @@ def permutation_test_irreversibility(
                         "n_permutations": n_pca_perms,
                     }
                     logger.info(
-                        "PCA fallback: p=%.4f, d=%.2f", pca_p, pca_d,
+                        "PCA permutation fallback: p=%.4f, d=%.2f", pca_p, pca_d,
                     )
             except Exception as e:
-                logger.warning("PCA fallback also failed: %s", e)
+                logger.warning("PCA fallback also failed: %s", e, exc_info=True)
 
         return fallback_result
 

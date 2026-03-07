@@ -81,6 +81,15 @@ def knn_entropy_production(
     joint_fwd = np.concatenate([x_t, x_tau], axis=1)   # (N, 2d)
     joint_rev = np.concatenate([x_tau, x_t], axis=1)    # (N, 2d)
 
+    # Filter out rows with NaN/Inf (can occur in high-dim standardized data)
+    finite_mask = np.all(np.isfinite(joint_fwd), axis=1) & np.all(np.isfinite(joint_rev), axis=1)
+    if not np.all(finite_mask):
+        joint_fwd = joint_fwd[finite_mask]
+        joint_rev = joint_rev[finite_mask]
+        if joint_fwd.shape[0] < k + 2:
+            return {"point_estimate": 0.0, "k": k, "n_samples_used": 0,
+                    "dimensionality": 2 * d}
+
     tree_fwd = KDTree(joint_fwd)
     tree_rev = KDTree(joint_rev)
 

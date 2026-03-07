@@ -232,6 +232,12 @@ def main() -> None:
 
     # Empirical entropy (compute once)
     # Use k-NN estimator for high-dimensional data (KDE fails above ~10 dims)
+    # Filter NaN/Inf rows (can occur from standardization edge cases)
+    finite_mask = np.all(np.isfinite(embedded), axis=1)
+    if not np.all(finite_mask):
+        n_bad = int((~finite_mask).sum())
+        logger.warning("Filtered %d non-finite rows from %d total", n_bad, len(embedded))
+        embedded = embedded[finite_mask]
     returns_tensor = torch.as_tensor(embedded, dtype=torch.float32)
     if embedded.shape[1] > 10:
         from src.model.entropy import knn_entropy_production

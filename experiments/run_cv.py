@@ -160,8 +160,11 @@ def train_fold(
 
     # Cap n_modes for CV: with limited fold data and high-dim input,
     # too many modes cause degenerate covariance → K zeroed out.
-    # Rule: n_modes <= input_dim // 2, and at most 10 for CV stability.
-    n_modes_cv = min(n_modes, max(input_dim // 2, 3), 10)
+    # For high-dim (>10), cap at 5; otherwise cap at input_dim // 2.
+    if input_dim > 10:
+        n_modes_cv = min(n_modes, 5)
+    else:
+        n_modes_cv = min(n_modes, max(input_dim // 2, 3))
     if n_modes_cv != n_modes:
         logger.info("CV: capping n_modes from %d to %d (input_dim=%d)",
                      n_modes, n_modes_cv, input_dim)
