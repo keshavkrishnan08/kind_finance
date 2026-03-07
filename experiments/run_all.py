@@ -143,6 +143,15 @@ def run_stage(
         return False
 
 
+def _safe_json_load(path: Path) -> dict | None:
+    """Load JSON file, return None on any error."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def should_skip(stage_num: int, resume_from: int, name: str,
                 check_files: list[Path] | None = None) -> bool:
     """Check if stage should be skipped. Returns True if skipped."""
@@ -301,17 +310,21 @@ def main() -> None:
         )
 
     # ==================================================================
-    # STAGE 6: Rolling spectral analysis
+    # STAGE 6: Rolling spectral analysis (requires univariate model)
     # ==================================================================
     rolling_file = results_dir / "spectral_gap_timeseries.csv"
+    uni_ckpt = models_dir / "vampnet_univariate.pt"
     if should_skip(6, rf, "Rolling", [rolling_file]):
         results["rolling"] = True
+    elif not uni_ckpt.exists():
+        print("  STAGE 6 (Rolling): SKIPPED (no univariate checkpoint)")
+        results["rolling"] = False
     else:
         results["rolling"] = run_stage(
             "Rolling spectral analysis",
             [py, "experiments/run_rolling.py",
              "--config", args.config, "--mode", "univariate",
-             "--checkpoint", str(models_dir / "vampnet_univariate.pt"),
+             "--checkpoint", str(uni_ckpt),
              "--output-dir", str(results_dir)],
             report,
             check_files=[rolling_file],
@@ -430,9 +443,9 @@ def main() -> None:
         # Collect seed-42 results
         for mode in args.modes:
             ap = results_dir / f"analysis_results_{mode}.json"
-            if ap.exists():
-                with open(ap) as f:
-                    multi_seed_data.setdefault(mode, {})[42] = json.load(f)
+            data = _safe_json_load(ap) if ap.exists() else None
+            if data is not None:
+                multi_seed_data.setdefault(mode, {})[42] = data
 
         # Train extra seeds
         for seed in extra_seeds:
@@ -444,22 +457,23 @@ def main() -> None:
             for mode in args.modes:
                 seed_ap = seed_results / f"analysis_results_{mode}.json"
                 if seed_ap.exists():
-                    print(f"  Seed {seed} {mode}: CACHED")
-                    with open(seed_ap) as f:
-                        multi_seed_data.setdefault(mode, {})[seed] = json.load(f)
-                    continue
+                    data = _safe_json_load(seed_ap)
+                    if data is not None:
+                        print(f"  Seed {seed} {mode}: CACHED")
+                        multi_seed_data.setdefault(mode, {})[seed] = data
+                        continue
 
                 print(f"  Seed {seed} {mode}: TRAINING...", flush=True)
-                ok = run_stage(
+                run_stage(
                     f"Seed {seed} {mode}",
                     [py, "experiments/run_main.py",
                      "--config", args.config, "--mode", mode,
                      "--seed", str(seed), "--output-dir", str(seed_dir)],
                     report,
                 )
-                if seed_ap.exists():
-                    with open(seed_ap) as f:
-                        multi_seed_data.setdefault(mode, {})[seed] = json.load(f)
+                data = _safe_json_load(seed_ap) if seed_ap.exists() else None
+                if data is not None:
+                    multi_seed_data.setdefault(mode, {})[seed] = data
 
         # Compute summaries
         metrics = [
@@ -473,15 +487,21 @@ def main() -> None:
             if mode not in multi_seed_data:
                 continue
             seed_data = multi_seed_data[mode]
-            seeds_present = sorted(seed_data.keys())
+            seeds_present = sorted(seed_data.keys(), key=lambda x: int(x))
             summary: dict = {"n_seeds": len(seeds_present), "seeds": seeds_present}
             for metric in metrics:
-                vals = [float(seed_data[s][metric]) for s in seeds_present
-                        if seed_data[s].get(metric) is not None]
+                vals = []
+                for s in seeds_present:
+                    v = seed_data[s].get(metric) if isinstance(seed_data[s], dict) else None
+                    if v is not None:
+                        try:
+                            vals.append(float(v))
+                        except (TypeError, ValueError):
+                            pass
                 if vals:
-                    summary[f"{metric}_mean"] = float(np.mean(vals))
+                    summary[f"{metric}_mean"] = float(np.nanmean(vals))
                     summary[f"{metric}_std"] = (
-                        float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+                        float(np.nanstd(vals, ddof=1)) if len(vals) > 1 else 0.0
                     )
             multi_seed_summary[mode] = summary
 
@@ -530,56 +550,56 @@ def main() -> None:
     for name, ok in results.items():
         print(f"    {'OK' if ok else 'FAIL':6s}  {name}")
 
-    # Print key results
-    for mode in args.modes:
-        ap = results_dir / f"analysis_results_{mode}.json"
-        if not ap.exists():
-            continue
-        with open(ap) as f:
-            r = json.load(f)
-        label = "Univariate (SPY)" if mode == "univariate" else "Multiasset (11 ETFs)"
-        print(f"\n  === {label} ===")
-        print(f"    Spectral gap: {r.get('spectral_gap', 'N/A')}")
-        print(f"    Entropy spec: {r.get('entropy_total', 'N/A')}")
-        print(f"    DB violation: {r.get('detailed_balance_violation', 'N/A')}")
-        nber_f1 = r.get("ktnd_nber_f1")
-        if nber_f1 is not None:
-            print(f"    NBER F1:      {nber_f1:.3f}")
+    # Print key results (wrapped so report always completes)
+    try:
+        for mode in args.modes:
+            ap = results_dir / f"analysis_results_{mode}.json"
+            r = _safe_json_load(ap) if ap.exists() else None
+            if r is None:
+                continue
+            label = "Univariate (SPY)" if mode == "univariate" else "Multiasset (11 ETFs)"
+            print(f"\n  === {label} ===")
+            print(f"    Spectral gap: {r.get('spectral_gap', 'N/A')}")
+            print(f"    Entropy spec: {r.get('entropy_total', 'N/A')}")
+            print(f"    DB violation: {r.get('detailed_balance_violation', 'N/A')}")
+            nber_f1 = r.get("ktnd_nber_f1")
+            if isinstance(nber_f1, (int, float)):
+                print(f"    NBER F1:      {nber_f1:.3f}")
 
-    # Statistical tests
-    for mode, suffix in [("univariate", ""), ("multiasset", "_multiasset")]:
-        sp = results_dir / f"statistical_tests{suffix}.json"
-        if not sp.exists():
-            continue
-        with open(sp) as f:
-            st = json.load(f)
-        perm = st.get("permutation_irreversibility", {})
-        if "p_value" in perm:
-            p = perm["p_value"]
-            d = perm.get("cohens_d", "?")
-            p_str = f"{p:.4f}" if isinstance(p, (int, float)) else str(p)
-            d_str = f"{d:.2f}" if isinstance(d, (int, float)) else str(d)
-            print(f"    Permutation ({mode}): p={p_str}, d={d_str}")
+        # Statistical tests
+        for mode, suffix in [("univariate", ""), ("multiasset", "_multiasset")]:
+            sp = results_dir / f"statistical_tests{suffix}.json"
+            st = _safe_json_load(sp) if sp.exists() else None
+            if st is None:
+                continue
+            perm = st.get("permutation_irreversibility", {})
+            if "p_value" in perm:
+                p = perm["p_value"]
+                d = perm.get("cohens_d", "?")
+                p_str = f"{p:.4f}" if isinstance(p, (int, float)) else str(p)
+                d_str = f"{d:.2f}" if isinstance(d, (int, float)) else str(d)
+                print(f"    Permutation ({mode}): p={p_str}, d={d_str}")
 
-    # CV
-    for mode in args.modes:
-        cvp = results_dir / f"cv_results_{mode}.json"
-        if cvp.exists():
-            with open(cvp) as f:
-                cv = json.load(f)
-            v = cv.get("vamp2_mean", "?")
-            s = cv.get("vamp2_std", "?")
-            print(f"    CV ({mode}): vamp2={v} +/- {s}")
+        # CV
+        for mode in args.modes:
+            cvp = results_dir / f"cv_results_{mode}.json"
+            cv = _safe_json_load(cvp) if cvp.exists() else None
+            if cv is not None:
+                v = cv.get("vamp2_mean", "?")
+                s = cv.get("vamp2_std", "?")
+                print(f"    CV ({mode}): vamp2={v} +/- {s}")
 
-    # Crisis prediction
-    cp = results_dir / "crisis_prediction.json"
-    if cp.exists():
-        with open(cp) as f:
-            pred = json.load(f)
-        auroc = pred.get("auroc_spectral")
-        vix = pred.get("auroc_vix_baseline")
-        if auroc is not None:
-            print(f"    Crisis AUROC: {auroc:.4f} vs VIX {vix:.4f}")
+        # Crisis prediction
+        cp = results_dir / "crisis_prediction.json"
+        pred = _safe_json_load(cp) if cp.exists() else None
+        if pred is not None:
+            auroc = pred.get("auroc_spectral")
+            vix = pred.get("auroc_vix_baseline")
+            if isinstance(auroc, (int, float)):
+                vix_str = f"{vix:.4f}" if isinstance(vix, (int, float)) else "N/A"
+                print(f"    Crisis AUROC: {auroc:.4f} vs VIX {vix_str}")
+    except Exception as e:
+        print(f"\n  (Report printing error: {e})")
 
     print(f"\n  Report: {report_path}")
     print(f"  Results: {results_dir}")
