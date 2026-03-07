@@ -2,23 +2,42 @@
 """
 Master orchestrator for the full KTND-Finance experiment pipeline.
 
-Sequences all experiment stages via subprocess calls so each runner
-stays independent (separate process, clean imports).  Produces a final
-pipeline report summarising which stages succeeded.
+Runs all 15 stages matching the Colab notebook. Each stage is isolated
+in a subprocess so a failure in one stage never kills the pipeline.
 
 Usage
 -----
-    # Full pipeline (univariate + multiasset)
+    # Full pipeline from scratch
     python experiments/run_all.py
 
-    # Univariate only, skip data download
-    python experiments/run_all.py --modes univariate --skip-download
+    # Resume from stage 7 (skip stages 1-6)
+    python experiments/run_all.py --resume-from 7
 
-    # Include ablation sweep (expensive ~1400 trials)
-    python experiments/run_all.py --ablations --n-seeds 5 --n-jobs 4
+    # Univariate only
+    python experiments/run_all.py --modes univariate
+
+    # Include ablations (expensive)
+    python experiments/run_all.py --ablations --n-seeds 10
 
     # Custom output directory
-    python experiments/run_all.py --output-dir outputs/run_2026_02_09
+    python experiments/run_all.py --output-dir outputs/run_2026_03_07
+
+Stage map
+---------
+     1  Quick tests
+     2  Download data
+     3  Train univariate
+     4  Train multiasset
+     5  Baselines
+     6  Rolling spectral analysis
+     7  Robustness univariate
+     8  Robustness multiasset
+     9  Walk-forward CV (both modes)
+    10  Entropy calibration
+    11  Entropy convergence (both modes)
+    12  Figures
+    13  Multi-seed (5 seeds)
+    14  Ablations (optional, --ablations flag)
 """
 
 from __future__ import annotations
@@ -30,118 +49,156 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
+# =====================================================================
+# Helpers
+# =====================================================================
 
 def run_stage(
     name: str,
     cmd: list[str],
     report: dict,
+    check_files: list[Path] | None = None,
     cwd: Path = PROJECT_ROOT,
 ) -> bool:
-    """Run a pipeline stage and record the result.
-
-    Returns True if the stage succeeded, False otherwise.
-    """
+    """Run a pipeline stage, record result, never raise."""
     print(f"\n{'='*70}")
     print(f"  STAGE: {name}")
-    print(f"  CMD:   {' '.join(cmd)}")
-    print(f"{'='*70}\n")
+    print(f"{'='*70}\n", flush=True)
 
     t0 = time.time()
     try:
         result = subprocess.run(
             cmd,
             cwd=str(cwd),
-            check=True,
-            capture_output=False,
+            capture_output=True,
+            text=True,
+            timeout=7200,  # 2 hour max per stage
         )
         elapsed = time.time() - t0
+
+        # Print last 40 lines of stdout
+        if result.stdout:
+            lines = result.stdout.strip().split("\n")
+            for line in lines[-40:]:
+                print(f"  {line}")
+
+        if result.returncode != 0:
+            print(f"\n  === STDERR (last 20 lines) ===")
+            if result.stderr:
+                for line in result.stderr.strip().split("\n")[-20:]:
+                    print(f"  ! {line}")
+            report["stages"][name] = {
+                "status": "failed",
+                "returncode": result.returncode,
+                "elapsed_seconds": round(elapsed, 1),
+            }
+            print(f"\n  >> {name}: FAILED (exit {result.returncode}, {elapsed/60:.1f} min)")
+            return False
+
+        # Verify expected output files
+        if check_files:
+            missing = [f for f in check_files if not f.exists()]
+            if missing:
+                for f in missing:
+                    print(f"    MISSING: {f.name}")
+                report["stages"][name] = {
+                    "status": "incomplete",
+                    "missing_files": [str(f) for f in missing],
+                    "elapsed_seconds": round(elapsed, 1),
+                }
+                print(f"  >> {name}: INCOMPLETE ({elapsed/60:.1f} min)")
+                return False
+            for f in check_files:
+                sz = f.stat().st_size
+                print(f"  OK: {f.name} ({sz:,} bytes)")
+
         report["stages"][name] = {
             "status": "success",
             "elapsed_seconds": round(elapsed, 1),
         }
-        print(f"\n  >> {name}: SUCCESS ({elapsed:.1f}s)")
+        print(f"  >> {name}: OK ({elapsed/60:.1f} min)")
         return True
-    except subprocess.CalledProcessError as e:
+
+    except subprocess.TimeoutExpired:
         elapsed = time.time() - t0
         report["stages"][name] = {
-            "status": "failed",
-            "returncode": e.returncode,
+            "status": "timeout",
             "elapsed_seconds": round(elapsed, 1),
         }
-        print(f"\n  >> {name}: FAILED (returncode={e.returncode}, {elapsed:.1f}s)")
+        print(f"\n  >> {name}: TIMEOUT ({elapsed/60:.1f} min)")
         return False
-    except FileNotFoundError:
+    except Exception as e:
+        elapsed = time.time() - t0
         report["stages"][name] = {
             "status": "error",
-            "message": "Command not found",
+            "message": str(e),
+            "elapsed_seconds": round(elapsed, 1),
         }
-        print(f"\n  >> {name}: ERROR (command not found)")
+        print(f"\n  >> {name}: ERROR ({e})")
         return False
 
 
+def should_skip(stage_num: int, resume_from: int, name: str,
+                check_files: list[Path] | None = None) -> bool:
+    """Check if stage should be skipped. Returns True if skipped."""
+    if stage_num >= resume_from:
+        return False
+    if check_files:
+        missing = [f for f in check_files if not f.exists()]
+        if missing:
+            print(f"  STAGE {stage_num} ({name}): Cannot skip -- "
+                  f"missing: {[f.name for f in missing]}")
+            return False
+    print(f"  STAGE {stage_num} ({name}): SKIPPED (resume_from={resume_from})")
+    return True
+
+
+# =====================================================================
+# CLI
+# =====================================================================
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="KTND-Finance: Full experiment pipeline orchestrator",
+    p = argparse.ArgumentParser(
+        description="KTND-Finance: Full experiment pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--modes",
-        nargs="+",
-        default=["univariate", "multiasset"],
-        choices=["univariate", "multiasset"],
-        help="Experiment modes to run.",
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config/default.yaml",
-        help="Base configuration file.",
-    )
-    parser.add_argument(
-        "--ablations",
-        action="store_true",
-        help="Run ablation sweep (expensive; ~1400 trials with 10 seeds).",
-    )
-    parser.add_argument(
-        "--n-seeds",
-        type=int,
-        default=10,
-        help="Number of seeds per ablation variant.",
-    )
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=1,
-        help="Number of parallel jobs for ablations.",
-    )
-    parser.add_argument(
-        "--skip-download",
-        action="store_true",
-        help="Skip data download (use cached data).",
-    )
-    parser.add_argument(
-        "--skip-baselines",
-        action="store_true",
-        help="Skip baseline comparison.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=None,
-        help="Override output directory.",
-    )
-    return parser.parse_args()
+    p.add_argument("--modes", nargs="+", default=["univariate", "multiasset"],
+                   choices=["univariate", "multiasset"])
+    p.add_argument("--config", default="config/default.yaml")
+    p.add_argument("--resume-from", type=int, default=1,
+                   help="Stage number to resume from (1=fresh).")
+    p.add_argument("--ablations", action="store_true",
+                   help="Run ablation sweep after main pipeline.")
+    p.add_argument("--n-seeds", type=int, default=10,
+                   help="Seeds per ablation variant.")
+    p.add_argument("--multi-seeds", type=int, default=5,
+                   help="Number of seeds for multi-seed analysis.")
+    p.add_argument("--output-dir", type=str, default=None)
+    p.add_argument("--skip-tests", action="store_true")
+    return p.parse_args()
 
+
+# =====================================================================
+# Main
+# =====================================================================
 
 def main() -> None:
     args = parse_args()
-    python = sys.executable
+    py = sys.executable
 
     output_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "outputs"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = output_dir / "results"
+    models_dir = output_dir / "models"
+    figures_dir = output_dir / "figures"
+    data_dir = PROJECT_ROOT / "data"
+
+    for d in [output_dir, results_dir, models_dir, figures_dir]:
+        d.mkdir(parents=True, exist_ok=True)
 
     report: dict = {
         "pipeline": "KTND-Finance",
@@ -149,125 +206,384 @@ def main() -> None:
         "stages": {},
         "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
+    results: dict[str, bool] = {}
+    t_start = time.time()
+    rf = args.resume_from
 
-    t_pipeline = time.time()
-    all_ok = True
+    if rf > 1:
+        print(f"RESUMING FROM STAGE {rf} (skipping stages 1-{rf-1})")
 
-    # ---- Stage 1: Download data ----
-    if not args.skip_download:
-        ok = run_stage(
-            "download_data",
-            [python, "data/download.py", "--mode", "all"],
+    # ==================================================================
+    # STAGE 1: Quick tests
+    # ==================================================================
+    if args.skip_tests:
+        print("  STAGE 1 (Quick tests): SKIPPED (--skip-tests)")
+        results["tests"] = True
+    elif should_skip(1, rf, "Quick tests"):
+        results["tests"] = True
+    else:
+        results["tests"] = run_stage(
+            "Quick tests",
+            [py, "-m", "pytest", "tests/", "-q", "--tb=short",
+             "-k", "not test_synthetic"],
             report,
         )
-        if not ok:
-            all_ok = False
 
-    # ---- Stage 2: Train main model (per mode) ----
-    for mode in args.modes:
-        mode_config = f"config/{mode}.yaml"
-        mode_config_path = PROJECT_ROOT / mode_config
-        config_flag = str(mode_config) if mode_config_path.exists() else args.config
+    # ==================================================================
+    # STAGE 2: Download data
+    # ==================================================================
+    data_files = [data_dir / "prices.csv", data_dir / "vix.csv"]
+    if should_skip(2, rf, "Download data", data_files):
+        results["download"] = True
+    else:
+        results["download"] = run_stage(
+            "Download data",
+            [py, "data/download.py", "--mode", "all"],
+            report,
+            check_files=data_files,
+        )
 
-        cmd = [
-            python, "experiments/run_main.py",
-            "--config", config_flag,
-            "--mode", mode,
+    # ==================================================================
+    # STAGE 3: Train univariate
+    # ==================================================================
+    if "univariate" in args.modes:
+        uni_files = [
+            results_dir / "analysis_results_univariate.json",
+            models_dir / "vampnet_univariate.pt",
+            results_dir / "training_history_univariate.json",
         ]
-        if args.output_dir:
-            cmd.extend(["--output-dir", args.output_dir])
+        if should_skip(3, rf, "Train univariate", uni_files):
+            results["train_uni"] = True
+        else:
+            results["train_uni"] = run_stage(
+                "Train univariate (SPY)",
+                [py, "experiments/run_main.py",
+                 "--config", args.config, "--mode", "univariate",
+                 "--seed", "42", "--output-dir", str(output_dir)],
+                report,
+                check_files=uni_files,
+            )
 
-        ok = run_stage(f"train_{mode}", cmd, report)
-        if not ok:
-            all_ok = False
-
-    # ---- Stage 3: Baselines ----
-    if not args.skip_baselines:
-        cmd = [python, "experiments/run_baselines.py", "--config", args.config]
-        if args.output_dir:
-            cmd.extend(["--output-dir", args.output_dir])
-        ok = run_stage("baselines", cmd, report)
-        if not ok:
-            all_ok = False
-
-    # ---- Stage 4: Robustness / statistical tests (per mode) ----
-    for mode in args.modes:
-        cmd = [
-            python, "experiments/run_robustness.py",
-            "--config", args.config,
-            "--mode", mode,
+    # ==================================================================
+    # STAGE 4: Train multiasset
+    # ==================================================================
+    if "multiasset" in args.modes:
+        multi_files = [
+            results_dir / "analysis_results_multiasset.json",
+            models_dir / "vampnet_multiasset.pt",
+            results_dir / "training_history_multiasset.json",
         ]
-        if args.output_dir:
-            cmd.extend(["--output-dir", args.output_dir])
-        ok = run_stage(f"robustness_{mode}", cmd, report)
-        if not ok:
-            all_ok = False
+        if should_skip(4, rf, "Train multiasset", multi_files):
+            results["train_multi"] = True
+        else:
+            results["train_multi"] = run_stage(
+                "Train multiasset (11 ETFs)",
+                [py, "experiments/run_main.py",
+                 "--config", args.config, "--mode", "multiasset",
+                 "--seed", "42", "--output-dir", str(output_dir)],
+                report,
+                check_files=multi_files,
+            )
 
-    # ---- Stage 5: Rolling spectral analysis (per mode) ----
+    # ==================================================================
+    # STAGE 5: Baselines
+    # ==================================================================
+    baseline_file = results_dir / "baseline_comparison.csv"
+    if should_skip(5, rf, "Baselines", [baseline_file]):
+        results["baselines"] = True
+    else:
+        results["baselines"] = run_stage(
+            "Baselines (HMM, DMD, PCA, GARCH, VIX, LSTM-AE)",
+            [py, "experiments/run_baselines.py",
+             "--config", args.config, "--output-dir", str(results_dir)],
+            report,
+            check_files=[baseline_file],
+        )
+
+    # ==================================================================
+    # STAGE 6: Rolling spectral analysis
+    # ==================================================================
+    rolling_file = results_dir / "spectral_gap_timeseries.csv"
+    if should_skip(6, rf, "Rolling", [rolling_file]):
+        results["rolling"] = True
+    else:
+        results["rolling"] = run_stage(
+            "Rolling spectral analysis",
+            [py, "experiments/run_rolling.py",
+             "--config", args.config, "--mode", "univariate",
+             "--checkpoint", str(models_dir / "vampnet_univariate.pt"),
+             "--output-dir", str(results_dir)],
+            report,
+            check_files=[rolling_file],
+        )
+
+    # ==================================================================
+    # STAGE 7: Robustness univariate
+    # ==================================================================
+    if "univariate" in args.modes:
+        stat_file = results_dir / "statistical_tests.json"
+        if should_skip(7, rf, "Robustness univariate", [stat_file]):
+            results["robustness_uni"] = True
+        else:
+            results["robustness_uni"] = run_stage(
+                "Robustness (univariate, IAAFT, 2000 perms)",
+                [py, "experiments/run_robustness.py",
+                 "--config", args.config, "--mode", "univariate",
+                 "--checkpoint", str(models_dir / "vampnet_univariate.pt"),
+                 "--output-dir", str(results_dir)],
+                report,
+                check_files=[stat_file],
+            )
+
+    # ==================================================================
+    # STAGE 8: Robustness multiasset
+    # ==================================================================
+    if "multiasset" in args.modes:
+        stat_multi = results_dir / "statistical_tests_multiasset.json"
+        if should_skip(8, rf, "Robustness multiasset", [stat_multi]):
+            results["robustness_multi"] = True
+        else:
+            results["robustness_multi"] = run_stage(
+                "Robustness (multiasset, IAAFT, 2000 perms + PCA)",
+                [py, "experiments/run_robustness.py",
+                 "--config", args.config, "--mode", "multiasset",
+                 "--checkpoint", str(models_dir / "vampnet_multiasset.pt"),
+                 "--output-dir", str(results_dir)],
+                report,
+                check_files=[stat_multi],
+            )
+
+    # ==================================================================
+    # STAGE 9: Walk-forward CV
+    # ==================================================================
     for mode in args.modes:
-        cmd = [
-            python, "experiments/run_rolling.py",
-            "--config", args.config,
-            "--mode", mode,
-        ]
-        if args.output_dir:
-            cmd.extend(["--output-dir", args.output_dir])
-        ok = run_stage(f"rolling_{mode}", cmd, report)
-        if not ok:
-            all_ok = False
+        cv_file = results_dir / f"cv_results_{mode}.json"
+        if should_skip(9, rf, f"CV {mode}", [cv_file]):
+            results[f"cv_{mode}"] = True
+        else:
+            results[f"cv_{mode}"] = run_stage(
+                f"Walk-forward CV ({mode})",
+                [py, "experiments/run_cv.py",
+                 "--config", args.config, "--mode", mode,
+                 "--n-folds", "5", "--output-dir", str(results_dir)],
+                report,
+                check_files=[cv_file],
+            )
 
-    # ---- Stage 6: Ablation sweep (optional) ----
+    # ==================================================================
+    # STAGE 10: Entropy calibration (Brownian gyrator)
+    # ==================================================================
+    ecal_file = results_dir / "entropy_calibration.json"
+    if should_skip(10, rf, "Entropy calibration", [ecal_file]):
+        results["entropy_cal"] = True
+    else:
+        results["entropy_cal"] = run_stage(
+            "Entropy calibration (Brownian gyrator)",
+            [py, "experiments/run_entropy_calibration.py",
+             "--output-dir", str(results_dir), "--n-steps", "50000"],
+            report,
+            check_files=[ecal_file],
+        )
+
+    # ==================================================================
+    # STAGE 11: Entropy convergence vs K
+    # ==================================================================
+    for mode in args.modes:
+        ec_file = results_dir / f"entropy_convergence_{mode}.json"
+        if should_skip(11, rf, f"Entropy convergence {mode}", [ec_file]):
+            results[f"entropy_conv_{mode}"] = True
+        else:
+            results[f"entropy_conv_{mode}"] = run_stage(
+                f"Entropy convergence ({mode}, K=3..50)",
+                [py, "experiments/run_entropy_convergence.py",
+                 "--config", args.config, "--mode", mode,
+                 "--k-values", "3", "5", "10", "15", "20", "30", "50",
+                 "--output-dir", str(results_dir)],
+                report,
+                check_files=[ec_file],
+            )
+
+    # ==================================================================
+    # STAGE 12: Figures
+    # ==================================================================
+    if should_skip(12, rf, "Figures"):
+        results["figures"] = True
+    else:
+        results["figures"] = run_stage(
+            "Generate figures",
+            [py, "experiments/run_figures.py",
+             "--results-dir", str(results_dir),
+             "--figures-dir", str(figures_dir)],
+            report,
+        )
+
+    # ==================================================================
+    # STAGE 13: Multi-seed
+    # ==================================================================
+    ms_file = results_dir / "multi_seed_summary.json"
+    if should_skip(13, rf, "Multi-seed", [ms_file]):
+        results["multi_seed"] = True
+    else:
+        extra_seeds = list(range(args.multi_seeds - 1))  # [0, 1, 2, 3]
+        multi_seed_data: dict = {}
+
+        # Collect seed-42 results
+        for mode in args.modes:
+            ap = results_dir / f"analysis_results_{mode}.json"
+            if ap.exists():
+                with open(ap) as f:
+                    multi_seed_data.setdefault(mode, {})[42] = json.load(f)
+
+        # Train extra seeds
+        for seed in extra_seeds:
+            seed_dir = output_dir / f"seed_{seed}"
+            seed_results = seed_dir / "results"
+            seed_results.mkdir(parents=True, exist_ok=True)
+            (seed_dir / "models").mkdir(parents=True, exist_ok=True)
+
+            for mode in args.modes:
+                seed_ap = seed_results / f"analysis_results_{mode}.json"
+                if seed_ap.exists():
+                    print(f"  Seed {seed} {mode}: CACHED")
+                    with open(seed_ap) as f:
+                        multi_seed_data.setdefault(mode, {})[seed] = json.load(f)
+                    continue
+
+                print(f"  Seed {seed} {mode}: TRAINING...", flush=True)
+                ok = run_stage(
+                    f"Seed {seed} {mode}",
+                    [py, "experiments/run_main.py",
+                     "--config", args.config, "--mode", mode,
+                     "--seed", str(seed), "--output-dir", str(seed_dir)],
+                    report,
+                )
+                if seed_ap.exists():
+                    with open(seed_ap) as f:
+                        multi_seed_data.setdefault(mode, {})[seed] = json.load(f)
+
+        # Compute summaries
+        metrics = [
+            "vamp2_score", "spectral_gap", "entropy_empirical", "entropy_total",
+            "mean_irreversibility", "detailed_balance_violation",
+            "fluctuation_theorem_ratio", "n_complex_modes", "complex_fraction",
+            "ktnd_nber_accuracy", "ktnd_nber_f1",
+        ]
+        multi_seed_summary: dict = {}
+        for mode in args.modes:
+            if mode not in multi_seed_data:
+                continue
+            seed_data = multi_seed_data[mode]
+            seeds_present = sorted(seed_data.keys())
+            summary: dict = {"n_seeds": len(seeds_present), "seeds": seeds_present}
+            for metric in metrics:
+                vals = [float(seed_data[s][metric]) for s in seeds_present
+                        if seed_data[s].get(metric) is not None]
+                if vals:
+                    summary[f"{metric}_mean"] = float(np.mean(vals))
+                    summary[f"{metric}_std"] = (
+                        float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+                    )
+            multi_seed_summary[mode] = summary
+
+        with open(ms_file, "w") as f:
+            json.dump(multi_seed_summary, f, indent=2, default=str, allow_nan=True)
+
+        results["multi_seed"] = ms_file.exists()
+
+    # ==================================================================
+    # STAGE 14: Ablations (optional)
+    # ==================================================================
     if args.ablations:
-        cmd = [
-            python, "experiments/run_ablations.py",
-            "--config", args.config,
-            "--n-seeds", str(args.n_seeds),
-            "--n-jobs", str(args.n_jobs),
-        ]
-        if args.output_dir:
-            cmd.extend(["--output-dir", args.output_dir])
-        ok = run_stage("ablations", cmd, report)
-        if not ok:
-            all_ok = False
+        abl_file = results_dir / "ablation_summary.csv"
+        if should_skip(14, rf, "Ablations", [abl_file]):
+            results["ablations"] = True
+        else:
+            results["ablations"] = run_stage(
+                f"Ablations ({args.n_seeds} seeds)",
+                [py, "-u", "experiments/run_ablations.py",
+                 "--config", args.config,
+                 "--n-seeds", str(args.n_seeds),
+                 "--n-jobs", "1",
+                 "--output-dir", str(results_dir)],
+                report,
+                check_files=[abl_file],
+            )
 
-    # ---- Stage 7: Generate figures ----
-    cmd = [python, "experiments/run_figures.py"]
-    results_dir = output_dir / "results"
-    figures_dir = output_dir / "figures"
-    if results_dir.exists():
-        cmd.extend(["--results-dir", str(results_dir)])
-    cmd.extend(["--figures-dir", str(figures_dir)])
-    ok = run_stage("figures", cmd, report)
-    if not ok:
-        all_ok = False
-
-    # ---- Final report ----
-    elapsed_total = time.time() - t_pipeline
-    report["total_elapsed_seconds"] = round(elapsed_total, 1)
+    # ==================================================================
+    # FINAL REPORT
+    # ==================================================================
+    total_min = (time.time() - t_start) / 60
+    report["total_elapsed_seconds"] = round(total_min * 60, 1)
     report["end_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    report["all_passed"] = all_ok
 
-    n_success = sum(1 for s in report["stages"].values() if s["status"] == "success")
-    n_total = len(report["stages"])
+    n_ok = sum(1 for v in results.values() if v)
+    n_total = len(results)
 
     report_path = output_dir / "pipeline_report.json"
     with open(report_path, "w") as f:
-        json.dump(report, f, indent=2)
+        json.dump(report, f, indent=2, allow_nan=True)
 
     print(f"\n{'='*70}")
-    print("  KTND-Finance Pipeline Report")
+    print(f"  KTND-Finance Pipeline Report")
     print(f"{'='*70}")
-    print(f"  Stages passed:  {n_success}/{n_total}")
-    print(f"  Total time:     {elapsed_total:.1f}s ({elapsed_total/60:.1f} min)")
-    for name, info in report["stages"].items():
-        status = info["status"].upper()
-        t = info.get("elapsed_seconds", "N/A")
-        print(f"    {name:30s}  {status:8s}  {t}s")
-    print(f"  Report saved:   {report_path}")
-    print(f"{'='*70}\n")
+    print(f"  Stages passed: {n_ok}/{n_total} ({total_min:.1f} min)")
+    for name, ok in results.items():
+        print(f"    {'OK' if ok else 'FAIL':6s}  {name}")
 
-    if not all_ok:
-        sys.exit(1)
+    # Print key results
+    for mode in args.modes:
+        ap = results_dir / f"analysis_results_{mode}.json"
+        if not ap.exists():
+            continue
+        with open(ap) as f:
+            r = json.load(f)
+        label = "Univariate (SPY)" if mode == "univariate" else "Multiasset (11 ETFs)"
+        print(f"\n  === {label} ===")
+        print(f"    Spectral gap: {r.get('spectral_gap', 'N/A')}")
+        print(f"    Entropy spec: {r.get('entropy_total', 'N/A')}")
+        print(f"    DB violation: {r.get('detailed_balance_violation', 'N/A')}")
+        nber_f1 = r.get("ktnd_nber_f1")
+        if nber_f1 is not None:
+            print(f"    NBER F1:      {nber_f1:.3f}")
+
+    # Statistical tests
+    for mode, suffix in [("univariate", ""), ("multiasset", "_multiasset")]:
+        sp = results_dir / f"statistical_tests{suffix}.json"
+        if not sp.exists():
+            continue
+        with open(sp) as f:
+            st = json.load(f)
+        perm = st.get("permutation_irreversibility", {})
+        if "p_value" in perm:
+            p = perm["p_value"]
+            d = perm.get("cohens_d", "?")
+            p_str = f"{p:.4f}" if isinstance(p, (int, float)) else str(p)
+            d_str = f"{d:.2f}" if isinstance(d, (int, float)) else str(d)
+            print(f"    Permutation ({mode}): p={p_str}, d={d_str}")
+
+    # CV
+    for mode in args.modes:
+        cvp = results_dir / f"cv_results_{mode}.json"
+        if cvp.exists():
+            with open(cvp) as f:
+                cv = json.load(f)
+            v = cv.get("vamp2_mean", "?")
+            s = cv.get("vamp2_std", "?")
+            print(f"    CV ({mode}): vamp2={v} +/- {s}")
+
+    # Crisis prediction
+    cp = results_dir / "crisis_prediction.json"
+    if cp.exists():
+        with open(cp) as f:
+            pred = json.load(f)
+        auroc = pred.get("auroc_spectral")
+        vix = pred.get("auroc_vix_baseline")
+        if auroc is not None:
+            print(f"    Crisis AUROC: {auroc:.4f} vs VIX {vix:.4f}")
+
+    print(f"\n  Report: {report_path}")
+    print(f"  Results: {results_dir}")
+    print(f"{'='*70}\n")
 
 
 if __name__ == "__main__":
