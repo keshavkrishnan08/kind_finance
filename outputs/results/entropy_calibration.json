@@ -1,0 +1,79 @@
+{
+  "calibration_points": [
+    {
+      "T1": 1.0,
+      "T2": 1.0,
+      "ep_analytical": 3.4512664603419275e-31,
+      "ep_kde": 5.921536828518739,
+      "ep_kde_ci_lower": 4.02645585607654,
+      "ep_kde_ci_upper": 4.180672919935964,
+      "ep_spectral": 0.0,
+      "kde_to_true_ratio": NaN,
+      "spectral_to_true_ratio": NaN,
+      "kde_to_spectral_ratio": NaN
+    },
+    {
+      "T1": 1.0,
+      "T2": 1.5,
+      "ep_analytical": 0.020833333333333315,
+      "ep_kde": 5.921629597280806,
+      "ep_kde_ci_lower": 4.020078241168445,
+      "ep_kde_ci_upper": 4.176851962493443,
+      "ep_spectral": 0.6597341895103455,
+      "kde_to_true_ratio": 284.23822066947895,
+      "spectral_to_true_ratio": 31.66724109649661,
+      "kde_to_spectral_ratio": 8.97578099094097
+    },
+    {
+      "T1": 1.0,
+      "T2": 2.0,
+      "ep_analytical": 0.06250000000000001,
+      "ep_kde": 5.922656751562265,
+      "ep_kde_ci_lower": 4.014184946712597,
+      "ep_kde_ci_upper": 4.171709660646809,
+      "ep_spectral": 0.6557685732841492,
+      "kde_to_true_ratio": 94.76250802499622,
+      "spectral_to_true_ratio": 10.492297172546385,
+      "kde_to_spectral_ratio": 9.0316263890187
+    },
+    {
+      "T1": 1.0,
+      "T2": 3.0,
+      "ep_analytical": 0.16666666666666669,
+      "ep_kde": 5.92582730414472,
+      "ep_kde_ci_lower": 4.004799986638562,
+      "ep_kde_ci_upper": 4.162927981648379,
+      "ep_spectral": 0.6586388349533081,
+      "kde_to_true_ratio": 35.55496382486832,
+      "spectral_to_true_ratio": 3.951833009719848,
+      "kde_to_spectral_ratio": 8.99708154100086
+    },
+    {
+      "T1": 1.0,
+      "T2": 5.0,
+      "ep_analytical": 0.4,
+      "ep_kde": 5.934419018946021,
+      "ep_kde_ci_lower": 3.9924947581360466,
+      "ep_kde_ci_upper": 4.151355131990158,
+      "ep_spectral": 0.5948421955108643,
+      "kde_to_true_ratio": 14.836047547365052,
+      "spectral_to_true_ratio": 1.4871054887771606,
+      "kde_to_spectral_ratio": 9.976459410128772
+    },
+    {
+      "T1": 1.0,
+      "T2": 8.0,
+      "ep_analytical": 0.7656249999999999,
+      "ep_kde": 5.9498807007957835,
+      "ep_kde_ci_lower": 3.97753609136827,
+      "ep_kde_ci_upper": 4.139126136344178,
+      "ep_spectral": 0.5260949730873108,
+      "kde_to_true_ratio": 7.7712727520598,
+      "spectral_to_true_ratio": 0.6871444546446509,
+      "kde_to_spectral_ratio": 11.30951825272115
+    }
+  ],
+  "T1": 1.0,
+  "k": 1.0,
+  "kappa": 0.5
+}

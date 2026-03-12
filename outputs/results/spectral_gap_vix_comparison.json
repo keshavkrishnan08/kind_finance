@@ -1,0 +1,9 @@
+{
+  "comparison": "completed",
+  "n_common_dates": 1566,
+  "concurrent_correlation": -0.27351737934788733,
+  "optimal_lag_days": -11,
+  "optimal_correlation": -0.2930936125128863,
+  "lead_indicator": true,
+  "lead_time_days": 11
+}

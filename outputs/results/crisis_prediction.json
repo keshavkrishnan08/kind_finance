@@ -1,0 +1,17 @@
+{
+  "prediction": "completed",
+  "auroc_spectral": 0.778197593059054,
+  "auroc_vix_baseline": 0.5619402462916316,
+  "n_oos_windows": 1215,
+  "n_positive": 24,
+  "n_total": 1215,
+  "positive_rate": 0.019753086419753086,
+  "horizon_days": 60,
+  "features_used": [
+    "spectral_gap",
+    "entropy_production",
+    "mean_irreversibility",
+    "vamp2_score"
+  ],
+  "improvement_over_vix": 0.21625734676742236
+}

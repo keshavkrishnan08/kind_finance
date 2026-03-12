@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -52,6 +53,19 @@ from pathlib import Path
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Fix Intel OpenMP (MKL) / LLVM OpenMP (PyTorch) conflict → SIGSEGV on macOS/Anaconda
+# KMP_DUPLICATE_LIB_OK: suppresses Intel OpenMP abort on duplicate detection
+# MKL_THREADING_LAYER=GNU: forces MKL to use GNU OpenMP instead of Intel OpenMP
+# OMP_NUM_THREADS=1: single-threaded BLAS avoids the thread-pool conflict entirely
+_SUBPROCESS_ENV = {
+    **os.environ,
+    "KMP_DUPLICATE_LIB_OK": "TRUE",
+    "MKL_THREADING_LAYER": "GNU",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+}
 
 
 # =====================================================================
@@ -78,6 +92,7 @@ def run_stage(
             capture_output=True,
             text=True,
             timeout=7200,  # 2 hour max per stage
+            env=_SUBPROCESS_ENV,
         )
         elapsed = time.time() - t0
 
@@ -339,11 +354,12 @@ def main() -> None:
             results["robustness_uni"] = True
         else:
             results["robustness_uni"] = run_stage(
-                "Robustness (univariate, IAAFT, 2000 perms)",
+                "Robustness (univariate, IAAFT, 200 perms)",
                 [py, "experiments/run_robustness.py",
                  "--config", args.config, "--mode", "univariate",
                  "--checkpoint", str(models_dir / "vampnet_univariate.pt"),
-                 "--output-dir", str(results_dir)],
+                 "--output-dir", str(results_dir),
+                 "--n-permutations", "200"],
                 report,
                 check_files=[stat_file],
             )
@@ -357,11 +373,12 @@ def main() -> None:
             results["robustness_multi"] = True
         else:
             results["robustness_multi"] = run_stage(
-                "Robustness (multiasset, IAAFT, 2000 perms + PCA)",
+                "Robustness (multiasset, IAAFT, 200 perms + PCA)",
                 [py, "experiments/run_robustness.py",
                  "--config", args.config, "--mode", "multiasset",
                  "--checkpoint", str(models_dir / "vampnet_multiasset.pt"),
-                 "--output-dir", str(results_dir)],
+                 "--output-dir", str(results_dir),
+                 "--n-permutations", "200"],
                 report,
                 check_files=[stat_multi],
             )

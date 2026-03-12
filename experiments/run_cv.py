@@ -159,8 +159,8 @@ def train_fold(
     n_modes = model_cfg.get("n_modes", 10)
 
     # Cap n_modes for CV: with limited fold data and high-dim input,
-    # too many modes cause degenerate covariance → K zeroed out.
-    # For high-dim (>10), cap at 5; otherwise cap at input_dim // 2.
+    # too many modes cause mode collapse → degenerate covariance → K=0 → vamp2=0.
+    # For high-dim (>10), cap at 3; otherwise cap at input_dim // 2.
     if input_dim > 10:
         n_modes_cv = min(n_modes, 5)
     else:
@@ -169,12 +169,15 @@ def train_fold(
         logger.info("CV: capping n_modes from %d to %d (input_dim=%d)",
                      n_modes, n_modes_cv, input_dim)
 
+    # Use larger epsilon for high-dim CV to prevent degenerate covariance
+    cv_epsilon = 1e-3 if input_dim > 10 else model_cfg.get("epsilon", 1e-6)
+
     model = NonEquilibriumVAMPNet(
         input_dim=input_dim,
         hidden_dims=model_cfg.get("hidden_dims", [128, 128, 64]),
         output_dim=n_modes_cv,
         dropout=model_cfg.get("dropout", 0.1),
-        epsilon=model_cfg.get("epsilon", 1e-6),
+        epsilon=cv_epsilon,
     ).to(device)
 
     # Training loop (abbreviated — fewer epochs for CV efficiency)
@@ -332,11 +335,21 @@ def main() -> None:
         method=config.get("data", {}).get("standardization", "zscore"),
         train_end_idx=train_end_idx,
     )
+    # Drop rows with any NaN (tickers with later start dates produce NaN
+    # in early rows, which propagates through the model → K=0 collapse)
+    if isinstance(standardized, pd.DataFrame):
+        standardized = standardized.dropna()
     std_arr = standardized.values if isinstance(standardized, pd.DataFrame) else standardized
     dates = standardized.index if isinstance(standardized, pd.DataFrame) else pd.RangeIndex(len(std_arr))
 
     embedding_dim = config.get("data", {}).get("embedding_dim", 5)
-    if embedding_dim >= 2:
+    n_tickers = std_arr.shape[1] if std_arr.ndim > 1 else 1
+    # For high-dimensional multiasset data, skip time-delay embedding in CV
+    # to avoid curse of dimensionality (e.g. 11 tickers × 2 = 22 dims → mode collapse)
+    if n_tickers > 5 and embedding_dim >= 2:
+        logger.info("CV: skipping time-delay embedding for %d tickers (using raw returns)", n_tickers)
+        embedded = std_arr
+    elif embedding_dim >= 2:
         embedded = time_delay_embedding(std_arr, embedding_dim=embedding_dim, delay=1)
         trim = std_arr.shape[0] - embedded.shape[0]
         dates = dates[trim:]

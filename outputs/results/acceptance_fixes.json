@@ -1,0 +1,125 @@
+{
+  "frobenius_ep": {
+    "univariate": {
+      "n_modes": 5,
+      "ep_frobenius": 0.0056,
+      "ep_perturbative": 0.8279,
+      "ep_sin2_corrected": 0.0112,
+      "ep_knn": 0.258,
+      "ka_ks_ratio": 0.5569
+    },
+    "multiasset": {
+      "n_modes": 15,
+      "ep_frobenius": 0.2366,
+      "ep_perturbative": 2.2034,
+      "ep_sin2_corrected": 0.327,
+      "ep_knn": 0.3078,
+      "ka_ks_ratio": 0.8803
+    }
+  },
+  "gyrator_frobenius": {
+    "calibration_points": [
+      {
+        "T2": 1.0,
+        "ep_analytical": 0.0,
+        "ep_frobenius": 0.0,
+        "ep_perturbative": 0.0,
+        "ep_eig_frobenius": 0.0
+      },
+      {
+        "T2": 1.5,
+        "ep_analytical": 0.022727,
+        "ep_frobenius": 6e-06,
+        "ep_perturbative": 6e-06,
+        "ep_eig_frobenius": 0.0
+      },
+      {
+        "T2": 2.0,
+        "ep_analytical": 0.0625,
+        "ep_frobenius": 7.9e-05,
+        "ep_perturbative": 8.4e-05,
+        "ep_eig_frobenius": 0.0
+      },
+      {
+        "T2": 3.0,
+        "ep_analytical": 0.137931,
+        "ep_frobenius": 0.000109,
+        "ep_perturbative": 0.000115,
+        "ep_eig_frobenius": 0.0
+      },
+      {
+        "T2": 5.0,
+        "ep_analytical": 0.238806,
+        "ep_frobenius": 0.000186,
+        "ep_perturbative": 0.000195,
+        "ep_eig_frobenius": 0.0
+      },
+      {
+        "T2": 8.0,
+        "ep_analytical": 0.318182,
+        "ep_frobenius": 0.00044,
+        "ep_perturbative": 0.000465,
+        "ep_eig_frobenius": 0.0
+      }
+    ],
+    "frobenius_analytical_correlation": 0.943,
+    "frobenius_monotonic": true
+  },
+  "multiasset_bootstrap_5modes": {
+    "n_modes": 5,
+    "n_bootstrap": 200,
+    "n_successful": 200,
+    "modes_ci": [
+      {
+        "mode": 0,
+        "mean": 0.5965,
+        "std": 0.2354,
+        "ci_lower": 0.1944,
+        "ci_upper": 0.9263,
+        "ci_width": 0.7319
+      },
+      {
+        "mode": 1,
+        "mean": 0.4812,
+        "std": 0.2351,
+        "ci_lower": 0.1271,
+        "ci_upper": 0.8666,
+        "ci_width": 0.7395
+      },
+      {
+        "mode": 2,
+        "mean": 0.4212,
+        "std": 0.2557,
+        "ci_lower": 0.103,
+        "ci_upper": 0.8656,
+        "ci_width": 0.7626
+      },
+      {
+        "mode": 3,
+        "mean": 0.3773,
+        "std": 0.2361,
+        "ci_lower": 0.0736,
+        "ci_upper": 0.7893,
+        "ci_width": 0.7157
+      },
+      {
+        "mode": 4,
+        "mean": 0.2462,
+        "std": 0.1967,
+        "ci_lower": 0.0127,
+        "ci_upper": 0.7171,
+        "ci_width": 0.7044
+      }
+    ],
+    "non_degenerate": true
+  },
+  "drawdown_prediction": {
+    "auroc_spectral": 0.8574,
+    "auroc_vix": 0.8985,
+    "n_oos": 1044,
+    "n_drawdown_events": 195,
+    "positive_rate": 0.1868,
+    "horizon_days": 60,
+    "drawdown_threshold": -0.15
+  }
+}

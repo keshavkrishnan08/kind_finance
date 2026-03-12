@@ -1,0 +1,36 @@
+{
+  "horizons": {
+    "30": {
+      "auroc_spectral": 0.791749534868801,
+      "auroc_vix": 0.5978700198883685,
+      "improvement": 0.19387951498043243,
+      "n_oos": 1212,
+      "positive_rate": 0.010726072607260726
+    },
+    "60": {
+      "auroc_spectral": 0.778197593059054,
+      "auroc_vix": 0.5619402462916316,
+      "improvement": 0.21625734676742236,
+      "n_oos": 1215,
+      "positive_rate": 0.019753086419753086
+    },
+    "90": {
+      "auroc_spectral": 0.7146379261763878,
+      "auroc_vix": 0.562717197332582,
+      "improvement": 0.1519207288438058,
+      "n_oos": 1219,
+      "positive_rate": 0.029532403609515995
+    },
+    "120": {
+      "auroc_spectral": 0.6911243611584328,
+      "auroc_vix": 0.5966780238500852,
+      "improvement": 0.09444633730834762,
+      "n_oos": 1224,
+      "positive_rate": 0.04084967320261438
+    }
+  },
+  "mean_auroc": 0.7439273538156689,
+  "min_auroc": 0.6911243611584328,
+  "all_above_06": true,
+  "all_above_07": false
+}

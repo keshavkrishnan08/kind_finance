@@ -7,15 +7,14 @@ build/
 .eggs/
 .pytest_cache/
 
-# Data (cached downloads)
-data/*.csv
+# Data (large raw files)
 data/*.parquet
 data/*.pkl
 data/raw/*.csv
+data/processed/
 
-# Results / outputs
-results/
-outputs/
+# Paper (submitted separately)
+paper/
 
 # IDE
 .vscode/

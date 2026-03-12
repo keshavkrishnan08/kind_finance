@@ -424,7 +424,14 @@ def permutation_test_irreversibility(
     logger.info("Running permutation test for irreversibility (n=%d, IAAFT surrogates) ...", n_permutations)
     model.eval()
 
-    # Observed irreversibility
+    def _db_violation(K_np: np.ndarray) -> float:
+        """Detailed balance violation: ||K - K^T||_F / ||K||_F."""
+        norm_K = np.linalg.norm(K_np, "fro")
+        if norm_K < 1e-15:
+            return 0.0
+        return float(np.linalg.norm(K_np - K_np.T, "fro") / norm_K)
+
+    # Observed irreversibility + detailed balance violation
     x_all = torch.as_tensor(embedded, dtype=torch.float32).to(device)
     x_t = torch.as_tensor(embedded[:-tau], dtype=torch.float32).to(device)
     x_tau = torch.as_tensor(embedded[tau:], dtype=torch.float32).to(device)
@@ -432,12 +439,15 @@ def permutation_test_irreversibility(
     with torch.no_grad():
         out = model(x_t, x_tau)
         irrev_observed = model.compute_irreversibility_field(x_all, out).cpu().numpy()
+        K_observed = out["koopman_matrix"].cpu().numpy()
 
     mean_irrev_observed = float(np.mean(irrev_observed))
+    db_observed = _db_violation(K_observed)
 
     # Null distribution: IAAFT surrogates (destroys ALL temporal asymmetry)
     rng = np.random.default_rng(42)
     null_means: List[float] = []
+    null_db: List[float] = []
 
     for p in range(n_permutations):
         surrogate = iaaft_surrogate(embedded, n_samples=1, max_iter=100, rng=rng)[0]
@@ -449,10 +459,13 @@ def permutation_test_irreversibility(
         with torch.no_grad():
             out_s = model(x_t_s, x_tau_s)
             irrev_s = model.compute_irreversibility_field(x_all_s, out_s).cpu().numpy()
+            K_s = out_s["koopman_matrix"].cpu().numpy()
 
         null_means.append(float(np.mean(irrev_s)))
+        null_db.append(_db_violation(K_s))
 
     null_arr = np.array(null_means)
+    null_db_raw = np.array(null_db)
 
     # Filter NaN surrogates (IAAFT can fail in high dimensions)
     valid_mask = ~np.isnan(null_arr)
@@ -463,6 +476,7 @@ def permutation_test_irreversibility(
             len(null_arr) - n_valid, len(null_arr),
         )
     null_arr = null_arr[valid_mask]
+    null_db_raw = null_db_raw[valid_mask]  # keep in sync
 
     if n_valid == 0:
         # All IAAFT surrogates failed — fall back to PCA-projected test
@@ -553,7 +567,7 @@ def permutation_test_irreversibility(
 
         return fallback_result
 
-    p_value = float(np.mean(null_arr >= mean_irrev_observed))
+    p_irrev = float(np.mean(null_arr >= mean_irrev_observed))
 
     # Cohen's d effect size: (observed - null_mean) / null_std
     null_std = float(np.std(null_arr))
@@ -569,6 +583,39 @@ def permutation_test_irreversibility(
     else:
         effect_interpretation = "negligible"
 
+    # Detailed balance violation p-value (second test statistic)
+    valid_db = null_db_raw[~np.isnan(null_db_raw)]
+    if len(valid_db) > 0:
+        p_db = float(np.mean(valid_db >= db_observed))
+        db_cohens_d = float(
+            (db_observed - np.mean(valid_db)) / max(float(np.std(valid_db)), 1e-15)
+        )
+    else:
+        p_db = float("nan")
+        db_cohens_d = float("nan")
+
+    # Fisher combined p-value (Fisher, 1932): -2 * sum(ln(p_i)) ~ chi2(2k)
+    # Combines irreversibility and DB violation tests for increased power
+    _chi2 = scipy_stats.chi2
+    p_vals_for_fisher = [p for p in [p_irrev, p_db]
+                         if np.isfinite(p) and p > 0]
+    if len(p_vals_for_fisher) >= 2:
+        fisher_stat = -2.0 * sum(np.log(p) for p in p_vals_for_fisher)
+        p_fisher = float(1.0 - _chi2.cdf(fisher_stat, df=2 * len(p_vals_for_fisher)))
+    elif len(p_vals_for_fisher) == 1:
+        p_fisher = p_vals_for_fisher[0]
+    else:
+        p_fisher = float("nan")
+
+    # Use the irreversibility p-value as primary (scientifically motivated).
+    # DB violation is supplementary — surrogates can have HIGHER DB violation
+    # because randomized temporal structure creates more asymmetric K matrices.
+    p_value = p_irrev
+    logger.info(
+        "Permutation test: p_irrev=%.4f, p_db=%.4f, p_fisher=%.4f, d=%.2f",
+        p_irrev, p_db, p_fisher, cohens_d,
+    )
+
     result = {
         "test": "Permutation_Irreversibility",
         "surrogate_method": "IAAFT",
@@ -576,7 +623,14 @@ def permutation_test_irreversibility(
         "null_mean": float(np.mean(null_arr)),
         "null_std": null_std,
         "p_value": p_value,
+        "p_value_irreversibility": p_irrev,
+        "p_value_detailed_balance": p_db,
+        "p_value_fisher_combined": p_fisher,
         "cohens_d": cohens_d,
+        "cohens_d_db": db_cohens_d,
+        "observed_db_violation": db_observed,
+        "null_db_mean": float(np.mean(valid_db)) if len(valid_db) > 0 else float("nan"),
+        "null_db_std": float(np.std(valid_db)) if len(valid_db) > 0 else float("nan"),
         "effect_size": effect_interpretation,
         "n_permutations": n_permutations,
         "n_valid_surrogates": n_valid,

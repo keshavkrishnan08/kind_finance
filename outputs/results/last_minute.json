@@ -1,0 +1,153 @@
+{
+  "auroc_bootstrap": {
+    "auroc_spectral": 0.7794,
+    "auroc_spectral_ci": [
+      0.652,
+      0.882
+    ],
+    "auroc_vix": 0.5131,
+    "auroc_vix_ci": [
+      0.3758,
+      0.6481
+    ],
+    "auroc_diff": 0.2663,
+    "auroc_diff_ci": [
+      0.0934,
+      0.4087
+    ],
+    "p_spectral_gt_vix": 0.996,
+    "n_bootstrap": 2000,
+    "n_oos": 1044
+  },
+  "univariate_frobenius": {
+    "ep_frobenius_matrix": 0.0956,
+    "ep_frobenius_eigenvalues": 0.0305,
+    "ka_ks_ratio": "0.7152",
+    "ep_knn": 0.26,
+    "matrix_shape": [
+      5,
+      5
+    ]
+  },
+  "gyrator_tau_sweep": {
+    "1": {
+      "points": [
+        {
+          "T2": 1.0,
+          "ep_analytical": 0.0,
+          "ep_frobenius": 0.0
+        },
+        {
+          "T2": 1.5,
+          "ep_analytical": 0.022727,
+          "ep_frobenius": 5e-06
+        },
+        {
+          "T2": 2.0,
+          "ep_analytical": 0.0625,
+          "ep_frobenius": 8e-06
+        },
+        {
+          "T2": 3.0,
+          "ep_analytical": 0.137931,
+          "ep_frobenius": 2.3e-05
+        },
+        {
+          "T2": 5.0,
+          "ep_analytical": 0.238806,
+          "ep_frobenius": 5.8e-05
+        },
+        {
+          "T2": 8.0,
+          "ep_analytical": 0.318182,
+          "ep_frobenius": 8.2e-05
+        }
+      ],
+      "correlation": 0.9881,
+      "ratio_at_T2_3": 0.0002
+    },
+    "2": {
+      "points": [
+        {
+          "T2": 1.0,
+          "ep_analytical": 0.0,
+          "ep_frobenius": 0.0
+        },
+        {
+          "T2": 1.5,
+          "ep_analytical": 0.022727,
+          "ep_frobenius": 1e-05
+        },
+        {
+          "T2": 2.0,
+          "ep_analytical": 0.0625,
+          "ep_frobenius": 2.4e-05
+        },
+        {
+          "T2": 3.0,
+          "ep_analytical": 0.137931,
+          "ep_frobenius": 7.1e-05
+        },
+        {
+          "T2": 5.0,
+          "ep_analytical": 0.238806,
+          "ep_frobenius": 0.000107
+        },
+        {
+          "T2": 8.0,
+          "ep_analytical": 0.318182,
+          "ep_frobenius": 0.000207
+        }
+      ],
+      "correlation": 0.9752,
+      "ratio_at_T2_3": 0.0005
+    },
+    "5": {
+      "points": [
+        {
+          "T2": 1.0,
+          "ep_analytical": 0.0,
+          "ep_frobenius": 1e-06
+        },
+        {
+          "T2": 1.5,
+          "ep_analytical": 0.022727,
+          "ep_frobenius": 6e-06
+        },
+        {
+          "T2": 2.0,
+          "ep_analytical": 0.0625,
+          "ep_frobenius": 5e-05
+        },
+        {
+          "T2": 3.0,
+          "ep_analytical": 0.137931,
+          "ep_frobenius": 0.000101
+        },
+        {
+          "T2": 5.0,
+          "ep_analytical": 0.238806,
+          "ep_frobenius": 0.000225
+        },
+        {
+          "T2": 8.0,
+          "ep_analytical": 0.318182,
+          "ep_frobenius": 0.000359
+        }
+      ],
+      "correlation": 0.9873,
+      "ratio_at_T2_3": 0.0007
+    }
+  },
+  "combined_drawdown": {
+    "aurocs": {
+      "spectral": 0.8574,
+      "vix": 0.9017,
+      "combined": 0.9167,
+      "vix_raw": 0.8985
+    },
+    "combined_improvement_over_vix": 0.0182,
+    "n_oos": 1044,
+    "n_drawdown_events": 195
+  }
+}

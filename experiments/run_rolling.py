@@ -514,6 +514,145 @@ def _vix_baseline_auroc(
 
 
 # =====================================================================
+# Per-crisis early warning analysis
+# =====================================================================
+
+def per_crisis_analysis(
+    rolling_df: pd.DataFrame,
+    lookback_days: int = 120,
+    lookahead_days: int = 30,
+) -> Dict[str, Any]:
+    """Analyze spectral gap behavior around each NBER recession.
+
+    For each recession onset, measures:
+    - Spectral gap at onset
+    - Minimum spectral gap in lookback window
+    - Lead time: days before onset that gap begins declining
+    - Relative decline from pre-crisis peak to minimum
+    """
+    if "center_date" not in rolling_df.columns:
+        return {"analysis": "skipped", "reason": "no date column"}
+
+    dates = pd.to_datetime(rolling_df["center_date"])
+    sg = rolling_df["spectral_gap"].values
+
+    crisis_results = []
+    for start_str, end_str in NBER_RECESSIONS:
+        onset = pd.Timestamp(start_str)
+        crisis_end = pd.Timestamp(end_str)
+
+        # Find windows in the lookback period before onset
+        lookback_start = onset - pd.Timedelta(days=lookback_days)
+        pre_mask = (dates >= lookback_start) & (dates < onset)
+        during_mask = (dates >= onset) & (dates <= crisis_end)
+
+        if pre_mask.sum() < 5:
+            continue
+
+        sg_pre = sg[pre_mask]
+        dates_pre = dates[pre_mask]
+
+        # Peak spectral gap before crisis
+        peak_idx = np.argmax(sg_pre)
+        sg_peak = float(sg_pre[peak_idx])
+        peak_date = dates_pre.iloc[peak_idx]
+
+        # Minimum spectral gap before and during crisis
+        combined_mask = pre_mask | during_mask
+        sg_combined = sg[combined_mask]
+        dates_combined = dates[combined_mask]
+        min_idx = np.argmin(sg_combined)
+        sg_min = float(sg_combined[min_idx])
+        min_date = dates_combined.iloc[min_idx]
+
+        # Lead time: how many days before onset did the decline start?
+        # Define decline start as the peak before onset
+        lead_days = (onset - peak_date).days if peak_date < onset else 0
+
+        # Relative decline
+        decline_pct = (sg_peak - sg_min) / max(sg_peak, 1e-15) * 100
+
+        # Spectral gap at onset (nearest window)
+        onset_dist = np.abs((dates - onset).dt.total_seconds())
+        nearest_pos = int(onset_dist.values.argmin())
+        sg_at_onset = float(sg[nearest_pos])
+
+        crisis_results.append({
+            "recession": f"{start_str} to {end_str}",
+            "onset": start_str,
+            "sg_peak_before": sg_peak,
+            "peak_date": str(peak_date.date()),
+            "sg_at_onset": sg_at_onset,
+            "sg_minimum": sg_min,
+            "min_date": str(min_date.date()),
+            "lead_days": lead_days,
+            "decline_pct": round(decline_pct, 1),
+            "duration_days": (crisis_end - onset).days,
+        })
+
+    if not crisis_results:
+        return {"analysis": "skipped", "reason": "no recessions in data range"}
+
+    # Summary statistics
+    lead_days_all = [c["lead_days"] for c in crisis_results]
+    decline_all = [c["decline_pct"] for c in crisis_results]
+
+    return {
+        "analysis": "completed",
+        "n_recessions": len(crisis_results),
+        "crises": crisis_results,
+        "mean_lead_days": float(np.mean(lead_days_all)),
+        "mean_decline_pct": float(np.mean(decline_all)),
+        "all_showed_decline": all(d > 0 for d in decline_all),
+    }
+
+
+# =====================================================================
+# Multi-horizon crisis prediction
+# =====================================================================
+
+def multi_horizon_prediction(
+    rolling_df: pd.DataFrame,
+    project_root: Path,
+    horizons: List[int] = None,
+) -> Dict[str, Any]:
+    """Crisis prediction at multiple forecast horizons.
+
+    Tests robustness of the spectral crisis predictor across
+    different look-ahead windows [30, 60, 90, 120 days].
+    """
+    if horizons is None:
+        horizons = [30, 60, 90, 120]
+
+    results = {"horizons": {}}
+    for h in horizons:
+        try:
+            pred = crisis_prediction_test(rolling_df, project_root, horizon_days=h)
+            if pred.get("prediction") == "completed":
+                results["horizons"][h] = {
+                    "auroc_spectral": pred["auroc_spectral"],
+                    "auroc_vix": pred.get("auroc_vix_baseline"),
+                    "improvement": pred.get("improvement_over_vix"),
+                    "n_oos": pred["n_oos_windows"],
+                    "positive_rate": pred["positive_rate"],
+                }
+        except Exception as e:
+            logger.warning("Horizon %d failed: %s", h, e)
+            results["horizons"][h] = {"error": str(e)}
+
+    # Summary: spectral AUROC across all horizons
+    aurocs = [v["auroc_spectral"] for v in results["horizons"].values()
+              if isinstance(v, dict) and "auroc_spectral" in v]
+    if aurocs:
+        results["mean_auroc"] = float(np.mean(aurocs))
+        results["min_auroc"] = float(np.min(aurocs))
+        results["all_above_06"] = all(a > 0.6 for a in aurocs)
+        results["all_above_07"] = all(a > 0.7 for a in aurocs)
+
+    return results
+
+
+# =====================================================================
 # CLI
 # =====================================================================
 
@@ -620,6 +759,26 @@ def main() -> None:
     with open(prediction_path, "w") as f:
         json.dump(prediction_results, f, indent=2, default=str, allow_nan=True)
 
+    # Per-crisis early warning analysis
+    try:
+        crisis_analysis = per_crisis_analysis(rolling_df)
+    except Exception as e:
+        logger.error("Per-crisis analysis failed: %s", e, exc_info=True)
+        crisis_analysis = {"analysis": "failed", "error": str(e)}
+    crisis_analysis_path = output_dir / "per_crisis_analysis.json"
+    with open(crisis_analysis_path, "w") as f:
+        json.dump(crisis_analysis, f, indent=2, default=str, allow_nan=True)
+
+    # Multi-horizon prediction
+    try:
+        multi_horizon = multi_horizon_prediction(rolling_df, project_root)
+    except Exception as e:
+        logger.error("Multi-horizon prediction failed: %s", e, exc_info=True)
+        multi_horizon = {"error": str(e)}
+    multi_horizon_path = output_dir / "multi_horizon_prediction.json"
+    with open(multi_horizon_path, "w") as f:
+        json.dump(multi_horizon, f, indent=2, default=str, allow_nan=True)
+
     # Print summary
     print("\n" + "=" * 70)
     print("KTND-Finance: Rolling Spectral Analysis Summary")
@@ -666,9 +825,32 @@ def main() -> None:
     else:
         print(f"\n  Crisis prediction: {prediction_results.get('reason', 'skipped')}")
 
+    # Per-crisis early warning
+    if crisis_analysis.get("analysis") == "completed":
+        print(f"\n  Per-Crisis Early Warning:")
+        for c in crisis_analysis["crises"]:
+            print(f"    {c['onset']}: lead={c['lead_days']}d, decline={c['decline_pct']:.1f}%")
+        print(f"    Mean lead time:   {crisis_analysis['mean_lead_days']:.0f} days")
+        print(f"    Mean decline:     {crisis_analysis['mean_decline_pct']:.1f}%")
+        print(f"    All declined:     {crisis_analysis['all_showed_decline']}")
+
+    # Multi-horizon prediction
+    if "horizons" in multi_horizon:
+        print(f"\n  Multi-Horizon AUROC:")
+        for h, v in sorted(multi_horizon["horizons"].items(), key=lambda x: int(x[0])):
+            if isinstance(v, dict) and "auroc_spectral" in v:
+                vix_val = v.get("auroc_vix")
+                vix_str = f" (VIX: {vix_val:.3f})" if isinstance(vix_val, (int, float)) else ""
+                print(f"    {int(h):3d}d: {v['auroc_spectral']:.4f}{vix_str}")
+        if "mean_auroc" in multi_horizon:
+            print(f"    Mean AUROC:       {multi_horizon['mean_auroc']:.4f}")
+            print(f"    All > 0.7:        {multi_horizon.get('all_above_07', False)}")
+
     print(f"\n  Results: {csv_path}")
     print(f"  VIX comparison: {comparison_path}")
     print(f"  Crisis prediction: {prediction_path}")
+    print(f"  Per-crisis analysis: {crisis_analysis_path}")
+    print(f"  Multi-horizon: {multi_horizon_path}")
     print("=" * 70 + "\n")
 
 

@@ -1,0 +1,155 @@
+{
+  "multiasset": {
+    "total_perturbative": 0.9640000000000001,
+    "total_corrected": 0.18132724767898442,
+    "knn_reference": 0.31,
+    "correction_ratio": 0.1880988046462494,
+    "corrected_to_knn_ratio": 0.5849266054160788,
+    "top5_perturbative": [
+      3,
+      11,
+      6,
+      5,
+      8
+    ],
+    "top5_corrected": [
+      8,
+      3,
+      0,
+      10,
+      1
+    ],
+    "ordering_preserved": false,
+    "n_perturbative_modes": 2,
+    "n_marginal_modes": 4,
+    "n_nonperturbative_modes": 9,
+    "fraction_ep_from_nonpert": 0.9107883817427385,
+    "modes": [
+      {
+        "k": 0,
+        "omega_tau": 0.39123557912717416,
+        "correction_factor": 0.9500082209622822,
+        "sk_perturbative": 0.033,
+        "sk_corrected": 0.03135027129175531,
+        "regime": "marginal"
+      },
+      {
+        "k": 1,
+        "omega_tau": 0.39123557912717416,
+        "correction_factor": 0.9500082209622822,
+        "sk_perturbative": 0.022,
+        "sk_corrected": 0.02090018086117021,
+        "regime": "marginal"
+      },
+      {
+        "k": 2,
+        "omega_tau": 0.0,
+        "correction_factor": 1.0,
+        "sk_perturbative": 0.0,
+        "sk_corrected": 0.0,
+        "regime": "perturbative"
+      },
+      {
+        "k": 3,
+        "omega_tau": 2.158798930342464,
+        "correction_factor": 0.1485507226080705,
+        "sk_perturbative": 0.223,
+        "sk_corrected": 0.033126811141599724,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 4,
+        "omega_tau": 2.158798930342464,
+        "correction_factor": 0.1485507226080705,
+        "sk_perturbative": 0.024,
+        "sk_corrected": 0.0035652173425936924,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 5,
+        "omega_tau": 2.629050544829623,
+        "correction_factor": 0.034793083378575757,
+        "sk_perturbative": 0.145,
+        "sk_corrected": 0.005044997089893484,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 6,
+        "omega_tau": 2.629050544829623,
+        "correction_factor": 0.034793083378575757,
+        "sk_perturbative": 0.173,
+        "sk_corrected": 0.006019203424493605,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 7,
+        "omega_tau": 1.4774131347796933,
+        "correction_factor": 0.4541542061556898,
+        "sk_perturbative": 0.036,
+        "sk_corrected": 0.01634955142160483,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 8,
+        "omega_tau": 1.4774131347796933,
+        "correction_factor": 0.4541542061556898,
+        "sk_perturbative": 0.079,
+        "sk_corrected": 0.03587818228629949,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 9,
+        "omega_tau": 0.7456463880016003,
+        "correction_factor": 0.8278769414914803,
+        "sk_perturbative": 0.0,
+        "sk_corrected": 0.0,
+        "regime": "marginal"
+      },
+      {
+        "k": 10,
+        "omega_tau": 0.7456463880016003,
+        "correction_factor": 0.8278769414914803,
+        "sk_perturbative": 0.031,
+        "sk_corrected": 0.025664185186235887,
+        "regime": "marginal"
+      },
+      {
+        "k": 11,
+        "omega_tau": 3.141592653589793,
+        "correction_factor": 1.5195743635847466e-33,
+        "sk_perturbative": 0.183,
+        "sk_corrected": 2.780821085360086e-34,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 12,
+        "omega_tau": 0.0,
+        "correction_factor": 1.0,
+        "sk_perturbative": 0.0,
+        "sk_corrected": 0.0,
+        "regime": "perturbative"
+      },
+      {
+        "k": 13,
+        "omega_tau": 1.946067149650854,
+        "correction_factor": 0.2285765088892101,
+        "sk_perturbative": 0.005,
+        "sk_corrected": 0.0011428825444460505,
+        "regime": "NON-PERT"
+      },
+      {
+        "k": 14,
+        "omega_tau": 1.946067149650854,
+        "correction_factor": 0.2285765088892101,
+        "sk_perturbative": 0.01,
+        "sk_corrected": 0.002285765088892101,
+        "regime": "NON-PERT"
+      }
+    ]
+  },
+  "univariate": {
+    "ka_ks_ratio": 0.56,
+    "spectral_ep": 0.94,
+    "knn_estimate": 0.26
+  }
+}

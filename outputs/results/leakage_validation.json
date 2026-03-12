@@ -1,0 +1,48 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "check": "chronological_train_val",
+      "passed": true,
+      "gap_days": 1
+    },
+    {
+      "check": "chronological_val_test",
+      "passed": true,
+      "gap_days": 1
+    },
+    {
+      "check": "no_overlap_train_val",
+      "passed": true
+    },
+    {
+      "check": "no_overlap_train_test",
+      "passed": true
+    },
+    {
+      "check": "no_overlap_val_test",
+      "passed": true
+    },
+    {
+      "check": "stats_train_only",
+      "passed": true,
+      "center_match": true,
+      "scale_match": true
+    },
+    {
+      "check": "split_size_train",
+      "n_samples": 2700,
+      "passed": true
+    },
+    {
+      "check": "split_size_val",
+      "n_samples": 503,
+      "passed": true
+    },
+    {
+      "check": "split_size_test",
+      "n_samples": 1508,
+      "passed": true
+    }
+  ]
+}

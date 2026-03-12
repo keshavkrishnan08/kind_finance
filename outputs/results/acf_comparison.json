@@ -1,0 +1,8 @@
+{
+  "halflife_sg_days": 205,
+  "halflife_vix_days": 85,
+  "halflife_ratio": 2.41,
+  "tau_sg_days": 280.8,
+  "tau_vix_days": 123.7,
+  "tau_ratio": 2.27
+}

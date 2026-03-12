@@ -1,0 +1,45 @@
+{
+  "analysis": "completed",
+  "n_recessions": 3,
+  "crises": [
+    {
+      "recession": "2001-03-01 to 2001-11-30",
+      "onset": "2001-03-01",
+      "sg_peak_before": 0.3200058598072991,
+      "peak_date": "2000-12-07",
+      "sg_at_onset": 0.2939264127148619,
+      "sg_minimum": 0.17463454203921291,
+      "min_date": "2001-08-06",
+      "lead_days": 84,
+      "decline_pct": 45.4,
+      "duration_days": 274
+    },
+    {
+      "recession": "2007-12-01 to 2009-06-30",
+      "onset": "2007-12-01",
+      "sg_peak_before": 0.42046742326159403,
+      "peak_date": "2007-08-10",
+      "sg_at_onset": 0.2146314508261018,
+      "sg_minimum": 0.08583964340359533,
+      "min_date": "2007-10-22",
+      "lead_days": 113,
+      "decline_pct": 79.6,
+      "duration_days": 577
+    },
+    {
+      "recession": "2020-02-01 to 2020-04-30",
+      "onset": "2020-02-01",
+      "sg_peak_before": 0.18348004748052618,
+      "peak_date": "2019-10-07",
+      "sg_at_onset": 0.17683403204001258,
+      "sg_minimum": 0.17683403204001258,
+      "min_date": "2020-01-31",
+      "lead_days": 117,
+      "decline_pct": 3.6,
+      "duration_days": 89
+    }
+  ],
+  "mean_lead_days": 104.66666666666667,
+  "mean_decline_pct": 42.86666666666667,
+  "all_showed_decline": true
+}

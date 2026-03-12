@@ -489,11 +489,8 @@ def fig8_chapman_kolmogorov(
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.bar(steps, errors, color="steelblue", edgecolor="navy", linewidth=0.5)
     ax.set_xlabel("$n$ (multiples of $\\tau$)", fontsize=12)
-    ax.set_ylabel("Mean |$\\lambda$ error|", fontsize=12)
-    ck_p = ck.get('p_value')
-    ck_p_str = f"{ck_p:.4f}" if isinstance(ck_p, (int, float)) else "N/A"
-    ax.set_title(f"Chapman-Kolmogorov Consistency (p={ck_p_str})",
-                 fontsize=14)
+    ax.set_ylabel("CK residual $\\|[K(\\tau)]^n - K(n\\tau)\\|_F$", fontsize=12)
+    ax.set_title("Chapman-Kolmogorov Consistency Test", fontsize=14)
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
 
@@ -1129,6 +1126,272 @@ def figS14_crisis_prediction(
     _save_figure(fig, figures_dir / "supplemental", "figS14_crisis_prediction")
 
 
+def figS15_per_crisis_timing(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S15: Per-crisis spectral gap early warning."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    data = _load_json(results_dir / "per_crisis_analysis.json")
+    if data is None or data.get("analysis") != "completed":
+        logger.info("Skipping figS15: no per-crisis analysis data")
+        return
+
+    crises = data["crises"]
+    if not crises:
+        return
+
+    labels = [c["onset"] for c in crises]
+    leads = [c["lead_days"] for c in crises]
+    declines = [c["decline_pct"] for c in crises]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+    # Lead time bar chart
+    bars1 = ax1.bar(labels, leads, color="steelblue", edgecolor="black", linewidth=0.5)
+    ax1.set_ylabel("Lead Time (days)")
+    ax1.set_title("Spectral Gap Early Warning Lead Time")
+    ax1.tick_params(axis="x", rotation=45)
+    ax1.grid(True, alpha=0.3, axis="y")
+    for bar, val in zip(bars1, leads):
+        ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
+                 f"{val}d", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    # Decline magnitude bar chart
+    bars2 = ax2.bar(labels, declines, color="coral", edgecolor="black", linewidth=0.5)
+    ax2.set_ylabel("Decline (%)")
+    ax2.set_title("Spectral Gap Decline Before Crisis")
+    ax2.tick_params(axis="x", rotation=45)
+    ax2.grid(True, alpha=0.3, axis="y")
+    for bar, val in zip(bars2, declines):
+        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
+                 f"{val:.0f}%", ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    fig.tight_layout()
+    _save_figure(fig, figures_dir / "supplemental", "figS15_per_crisis_timing")
+
+
+def figS16_multi_horizon(
+    results_dir: Path,
+    figures_dir: Path,
+) -> None:
+    """Figure S16: Multi-horizon crisis prediction AUROC."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    data = _load_json(results_dir / "multi_horizon_prediction.json")
+    if data is None or "horizons" not in data:
+        logger.info("Skipping figS16: no multi-horizon data")
+        return
+
+    horizons_data = data["horizons"]
+    if not horizons_data:
+        return
+
+    # JSON keys are always strings; filter to entries with valid AUROC
+    horizons = sorted(
+        int(k) for k, v in horizons_data.items()
+        if isinstance(v, dict) and "auroc_spectral" in v
+    )
+    if not horizons:
+        return
+
+    auroc_spec = [horizons_data[str(h)]["auroc_spectral"] for h in horizons]
+    auroc_vix = [horizons_data[str(h)].get("auroc_vix") for h in horizons]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    x = np.arange(len(horizons))
+
+    ax.plot(x, auroc_spec, "o-", color="steelblue", linewidth=2, markersize=8,
+            label="KTND Spectral", zorder=3)
+    if any(v is not None for v in auroc_vix):
+        vix_vals = [v if v is not None else 0.5 for v in auroc_vix]
+        ax.plot(x, vix_vals, "s--", color="coral", linewidth=2, markersize=8,
+                label="VIX Level", zorder=3)
+
+    ax.axhline(0.5, color="gray", linestyle=":", linewidth=1, label="Random", zorder=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{h}d" for h in horizons])
+    ax.set_xlabel("Prediction Horizon")
+    ax.set_ylabel("AUROC")
+    ax.set_title("Crisis Prediction: Robustness Across Horizons")
+    ax.set_ylim(0.3, 1.0)
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    _save_figure(fig, figures_dir / "supplemental", "figS16_multi_horizon")
+
+
+def fig0_pipeline_schematic(
+    figures_dir: Path,
+) -> None:
+    """Figure 0: KTND pipeline schematic for the methods section."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(10, 3.0))
+    ax.set_xlim(-0.5, 10.5)
+    ax.set_ylim(-0.8, 2.2)
+    ax.axis("off")
+
+    # Box styles
+    box_kw = dict(boxstyle="round,pad=0.3", facecolor="white",
+                  edgecolor="navy", linewidth=1.5)
+    phys_kw = dict(boxstyle="round,pad=0.3", facecolor="#e8f4fd",
+                   edgecolor="steelblue", linewidth=1.5)
+    out_kw = dict(boxstyle="round,pad=0.3", facecolor="#fdf0e8",
+                  edgecolor="coral", linewidth=1.5)
+
+    # Pipeline stages
+    stages = [
+        (0.5, 1.0, "Returns\n$r_t$", box_kw),
+        (2.3, 1.0, "Delay\nEmbed", box_kw),
+        (4.1, 1.0, "Dual-Lobe\nVAMPNet", phys_kw),
+        (5.9, 1.0, "Koopman\n$\\mathbf{K}$", phys_kw),
+        (7.7, 1.0, "Eigenvalues\n$\\lambda_k$", phys_kw),
+    ]
+
+    # Output branches
+    outputs = [
+        (9.5, 1.8, "$\\Delta$  Spectral gap", out_kw),
+        (9.5, 1.0, "$\\dot{S}_k$  Entropy", out_kw),
+        (9.5, 0.2, "$I(\\mathbf{x})$  Irreversibility", out_kw),
+    ]
+
+    for x, y, txt, kw in stages:
+        ax.text(x, y, txt, ha="center", va="center", fontsize=9,
+                bbox=kw, fontfamily="serif")
+
+    for x, y, txt, kw in outputs:
+        ax.text(x, y, txt, ha="center", va="center", fontsize=8,
+                bbox=kw, fontfamily="serif")
+
+    # Arrows between stages
+    arrow_kw = dict(arrowstyle="->,head_width=0.15,head_length=0.1",
+                    color="navy", linewidth=1.5)
+    for i in range(len(stages) - 1):
+        x1 = stages[i][0] + 0.55
+        x2 = stages[i + 1][0] - 0.55
+        ax.annotate("", xy=(x2, 1.0), xytext=(x1, 1.0),
+                    arrowprops=arrow_kw)
+
+    # Arrows from eigenvalues to outputs
+    for _, oy, _, _ in outputs:
+        ax.annotate("", xy=(8.8, oy), xytext=(8.3, 1.0),
+                    arrowprops=dict(arrowstyle="->", color="coral",
+                                   linewidth=1.2))
+
+    # Annotations below
+    ax.text(0.5, -0.3, "Daily\nlog-returns", ha="center", fontsize=7,
+            color="gray", style="italic")
+    ax.text(2.3, -0.3, "Takens\n$m{=}5, \\delta{=}1$", ha="center",
+            fontsize=7, color="gray", style="italic")
+    ax.text(4.1, -0.3, "$f_{\\theta_1}, g_{\\theta_2}$\nindependent", ha="center",
+            fontsize=7, color="gray", style="italic")
+    ax.text(5.9, -0.3, "SVD +\neigendecomp.", ha="center",
+            fontsize=7, color="gray", style="italic")
+    ax.text(7.7, -0.3, "Complex $\\Rightarrow$\nbroken DB", ha="center",
+            fontsize=7, color="gray", style="italic")
+
+    fig.tight_layout()
+    _save_figure(fig, figures_dir, "fig0_pipeline_schematic")
+
+
+def figS17_perturbative_correction(
+    figures_dir: Path,
+) -> None:
+    """Figure S17: Perturbative correction analysis for per-mode EP."""
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    tau = 5.0
+    modes_data = [
+        (0,  0.400,  0.165, 0.033),
+        (1,  0.400, -0.165, 0.022),
+        (2,  0.425,  0.0,   0.0),
+        (3, -0.210,  0.315, 0.223),
+        (4, -0.210, -0.315, 0.024),
+        (5, -0.311,  0.175, 0.145),
+        (6, -0.311, -0.175, 0.173),
+        (7,  0.031,  0.331, 0.036),
+        (8,  0.031, -0.331, 0.079),
+        (9,  0.183,  0.169, 0.000),
+        (10, 0.183, -0.169, 0.031),
+        (11,-0.158,  0.0,   0.183),
+        (12, 0.095,  0.0,   0.0),
+        (13,-0.013,  0.033, 0.005),
+        (14,-0.013, -0.033, 0.010),
+    ]
+
+    ks, omega_taus, corrections, sk_perts, sk_corrs = [], [], [], [], []
+    for k, re_v, im_v, sk_p in modes_data:
+        lam = complex(re_v, im_v)
+        wt = abs(np.angle(lam))
+        wt_sq = wt ** 2
+        sin2 = np.sin(wt) ** 2
+        corr = sin2 / wt_sq if wt_sq > 1e-10 else 1.0
+        ks.append(k)
+        omega_taus.append(wt)
+        corrections.append(corr)
+        sk_perts.append(sk_p)
+        sk_corrs.append(sk_p * corr)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    # Panel (a): Correction factor
+    ax = axes[0]
+    colors = ["#2166ac" if wt < 0.5 else "#d6604d" if wt > 1.0
+              else "#f4a582" for wt in omega_taus]
+    ax.bar(ks, corrections, color=colors, edgecolor="k", linewidth=0.5)
+    ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.6)
+    ax.set_xlabel("Mode $k$", fontsize=11)
+    ax.set_ylabel("Correction factor\n"
+                  "$\\sin^2(\\omega_k\\tau)\\,/\\,(\\omega_k\\tau)^2$",
+                  fontsize=10)
+    ax.set_title("(a) Small-angle correction by mode", fontsize=11)
+    ax.set_ylim(-0.05, 1.15)
+    ax.set_xticks(ks)
+    legend_elements = [
+        Patch(facecolor="#2166ac", edgecolor="k",
+              label="$|\\omega_k\\tau| < 0.5$"),
+        Patch(facecolor="#f4a582", edgecolor="k",
+              label="$0.5 \\leq |\\omega_k\\tau| < 1$"),
+        Patch(facecolor="#d6604d", edgecolor="k",
+              label="$|\\omega_k\\tau| \\geq 1$"),
+    ]
+    ax.legend(handles=legend_elements, fontsize=8, loc="upper right")
+
+    # Panel (b): Perturbative vs corrected
+    ax2 = axes[1]
+    x = np.arange(len(ks))
+    w = 0.35
+    ax2.bar(x - w / 2, sk_perts, w, color="#d6604d", edgecolor="k",
+            linewidth=0.5, label="Perturbative $\\dot{S}_k$", alpha=0.8)
+    ax2.bar(x + w / 2, sk_corrs, w, color="#2166ac", edgecolor="k",
+            linewidth=0.5, label="Corrected $\\dot{S}_k$", alpha=0.8)
+    ax2.set_xlabel("Mode $k$", fontsize=11)
+    ax2.set_ylabel("$\\dot{S}_k$ (nats/day)", fontsize=11)
+    ax2.set_title("(b) Per-mode entropy production", fontsize=11)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(ks)
+    ax2.legend(fontsize=9, loc="upper right")
+    tot_p = sum(sk_perts)
+    tot_c = sum(sk_corrs)
+    ax2.text(0.98, 0.65, f"Total (pert.): {tot_p:.2f}\n"
+             f"Total (corr.): {tot_c:.2f}\n"
+             f"$k$-NN ref: 0.31",
+             transform=ax2.transAxes, fontsize=8, va="top", ha="right",
+             bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+
+    fig.tight_layout()
+    _save_figure(fig, figures_dir / "supplemental",
+                 "figS17_perturbative_correction")
+
+
 # =====================================================================
 # CLI
 # =====================================================================
@@ -1206,6 +1469,8 @@ def main() -> None:
     figS12_cv_results(results_dir, figures_dir)
     figS13_multiseed(results_dir, figures_dir)
     figS14_crisis_prediction(results_dir, figures_dir)
+    figS15_per_crisis_timing(results_dir, figures_dir)
+    figS16_multi_horizon(results_dir, figures_dir)
 
     # ----- Summary -----
     generated = list(figures_dir.glob("*.pdf")) + list((figures_dir / "supplemental").glob("*.pdf"))
